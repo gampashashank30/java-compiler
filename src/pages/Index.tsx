@@ -203,9 +203,17 @@ const Index = () => {
 
         try {
           const { callGroqAPI } = await import("@/utils/groqClient");
+          // Extract Class Name for Context (e.g. "Largest", "PrimeCheck")
+          const classNameMatch = code.match(/class\s+(\w+)/);
+          const className = classNameMatch ? classNameMatch[1] : "Unknown";
+
           // Use the SAME prompt structure as failure, but frame it as a 'Logic Audit'
           const prompt = `
                  The code ran successfully (Exit Code 0), but as a Senior Code Auditor, I need you to Verify the LOGIC.
+                 
+                 CONTEXT / INTENT:
+                 The Class Name is "${className}". 
+                 (e.g. If class is "Largest", code MUST find the largest number. If "Prime", it MUST correctly check Primes.)
                  
                  CODE: 
                  ${code}
@@ -214,15 +222,15 @@ const Index = () => {
                  ${result.output}
                  
                  YOUR TASK:
-                 Analyze the code for *ANY* logical errors, silent failures, or edge cases.
-                 Do NOT assume the code is correct just because it compiles.
+                 Analyze if the code *actually* performs the task implied by the Class Name "${className}".
+                 Also check for generic logical errors, silent failures, or edge cases.
                  
                  Look for:
+                 - Semantic Errors (Does it do what the Class Name says?)
                  - Mathematical errors (formulas, order of operations).
                  - Logic flaws (wrong conditions, unreachable code).
                  - Loop errors (ranges, termination).
-                 - State inconsistencies (updating variables in wrong order).
-                 - Edge cases (nulls, empty arrays, single elements).
+                 - State inconsistencies.
                  
                  If the logic is 100% correct and robust, return "minimal_fix_patches": [] and "summary": "Code works perfectly".
                  If there is ANY flaw (even minor), provide the fix.
@@ -239,7 +247,7 @@ const Index = () => {
                 `;
 
           const aiData = await callGroqAPI([
-            { role: "system", content: "You are a Senior Java Code Auditor. You are paranoid about logical errors. JSON only." },
+            { role: "system", content: "You are a Senior Java Code Auditor. You verify if the code matches the Class Name intent. JSON only." },
             { role: "user", content: prompt }
           ]);
 
