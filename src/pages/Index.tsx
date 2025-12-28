@@ -205,35 +205,41 @@ const Index = () => {
           const { callGroqAPI } = await import("@/utils/groqClient");
           // Use the SAME prompt structure as failure, but frame it as a 'Logic Audit'
           const prompt = `
-                 The code ran successfully (Exit Code 0), but I want to double-check for LOGICAL ERRORS.
+                 The code ran successfully (Exit Code 0), but as a Senior Code Auditor, I need you to Verify the LOGIC.
+                 
                  CODE: 
                  ${code}
                  
                  OUTPUT: 
                  ${result.output}
                  
-                 ANALYZE specifically for:
-                 1. Incorrect logic (e.g. Prime check failing, Palindrome logic wrong)
-                 2. Incorrect loop ranges (e.g. < n vs <= n)
-                 3. Integer division issues
-                 4. Wrong operators (e.g. > vs <)
+                 YOUR TASK:
+                 Analyze the code for *ANY* logical errors, silent failures, or edge cases.
+                 Do NOT assume the code is correct just because it compiles.
                  
-                 If NO errors are found, return "minimal_fix_patches": [] and "summary": "Code looks correct".
-                 If errors ARE found, provides fixes in "minimal_fix_patches".
+                 Look for:
+                 - Mathematical errors (formulas, order of operations).
+                 - Logic flaws (wrong conditions, unreachable code).
+                 - Loop errors (ranges, termination).
+                 - State inconsistencies (updating variables in wrong order).
+                 - Edge cases (nulls, empty arrays, single elements).
+                 
+                 If the logic is 100% correct and robust, return "minimal_fix_patches": [] and "summary": "Code works perfectly".
+                 If there is ANY flaw (even minor), provide the fix.
 
                  Provide a JSON response:
                  {
-                     "summary": "Summary of audit",
-                     "detailed_explanation": "Explanation",
-                     "fix_summary": "How to fix (if any)",
-                     "corrected_code": "Full Corrected Code (optional)",
+                     "summary": "Summary of logical flaw",
+                     "detailed_explanation": "Why the logic is wrong",
+                     "fix_summary": "Correction",
+                     "corrected_code": "Full Corrected Code",
                      "minimal_fix_patches": [ { "line_start": number, "line_end": number, "replacement": "string" } ],
-                     "confidence": number (1.0 for perfect, 0.0 for bad)
+                     "confidence": number (1.0 = definitely wrong, 0.0 = unsure)
                  }
                 `;
 
           const aiData = await callGroqAPI([
-            { role: "system", content: "You are a strict Java Code Auditor. JSON only." },
+            { role: "system", content: "You are a Senior Java Code Auditor. You are paranoid about logical errors. JSON only." },
             { role: "user", content: prompt }
           ]);
 
