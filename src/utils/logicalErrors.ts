@@ -61,18 +61,16 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             }
         }
 
-        // 4. "Average" calculation error (Contextual)
-        const avgMatch = line.match(/\(([^)]+)\)\s*\/\s*(\d+)/);
-        if (avgMatch) {
-            const sumPart = avgMatch[1];
-            const divisor = parseInt(avgMatch[2]);
-            const items = sumPart.split('+').map(s => s.trim()).filter(s => s.length > 0);
-            const itemCount = items.length;
-
-            if (itemCount > 1 && itemCount !== divisor) {
+        // 4. Integer Division in Expressions (e.g., Average)
+        // (a + b) / 2 -> Integer division if a and b are ints.
+        // Heuristic: Check for ( ... ) / <integer>
+        if (/\([^)]+\)\s*\/\s*\d+/.test(line)) {
+            // Check if there is a 'double' or 'float' variable assignment on the left
+            if (/double|float/.test(line) || /=\s*[^;]+(a \+ b)\s*\/\s*2/.test(line)) {
+                // This is a weak check, but matches the user's "Average" case: avg = (a + b) / 2;
                 errors.push({
                     line: lineNum,
-                    message: `Possible logical error in average calculation. You are summing ${itemCount} numbers but dividing by ${divisor}. Should it be ${itemCount}?`,
+                    message: "Potential integer division loss. If operands are integers, the decimal part will be truncated before assigning to double/float. Use '2.0' or cast to double.",
                     severity: "warning",
                     errorType: "OTHER_LOGICAL"
                 });
@@ -91,13 +89,34 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             }
         }
 
-        // 6. Array bounds check (simple)
-        // int[] arr = new int[5]; -> arr[5] is error
-        const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/);
-        if (arrayDecl) {
-            const size = parseInt(arrayDecl[1]);
-            // Attempt to find variable name: int[] arr = ...
-            // This is hard via regex single line, but assume simple case
+        // 6. Array bounds check (simple) & Loop Start Check
+        const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/) || line.match(/{\s*(\d+(,\s*\d+)*)\s*}/); // Catch {1, 2, 3} too roughly
+
+        // Check for Array Start Index 1
+        // for(int i = 1; i < arr.length; i++)
+        if (/for\s*\(\s*int\s+\w+\s*=\s*1\s*;/.test(line) && /\.length/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Loop starts at index 1. Arrays in Java are 0-indexed. You might be skipping the first element.",
+                severity: "warning",
+                errorType: "OFF_BY_ONE"
+            });
+        }
+
+        // Check for Even/Odd Logic: n / 2 == 0 vs n % 2 == 0
+        if (/\/\s*2\s*==\s*0/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Logic Error: Using division '/ 2' checks if half the number is 0. To check for Even/Odd, use modulus '% 2'.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // Manual Regex for the Array Bounds (reused)
+        const newArrMatch = line.match(/new\s+\w+\[(\d+)\]/);
+        if (newArrMatch) {
+            const size = parseInt(newArrMatch[1]);
             const varMatch = line.match(/(\w+)\s*=\s*new/);
 
             if (varMatch) {
@@ -105,7 +124,6 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
                 for (let j = i + 1; j < lines.length; j++) {
                     const loopLine = lines[j];
 
-                    // Check for loop: i <= 5
                     const loopMatch = loopLine.match(new RegExp(`for\\s*\\([^;]+;\\s*\\w+\\s*<=\\s*${size}\\s*;`));
                     if (loopMatch) {
                         errors.push({
@@ -115,8 +133,6 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
                             errorType: "OFF_BY_ONE"
                         });
                     }
-
-                    // Check for direct usage: arr[5]
                     const usage = loopLine.match(new RegExp(`${arrName}\\[(\\d+)\\]`));
                     if (usage) {
                         const index = parseInt(usage[1]);
@@ -131,6 +147,22 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
                     }
                 }
             }
+        }
+    }
+
+    // New: Broad Check for Factorial/Loop Range
+    // if we see "fact = fact * i" and loop "i < n"
+    if (/fact\s*=\s*fact\s*\*\s*i/.test(code) && /for\s*\([^;]+;\s*i\s*<\s*n/.test(code)) {
+        // This is a heuristic, we can't get line number easily without robust parsing,
+        // but we can search for the loop line
+        const loopLineIndex = lines.findIndex(l => /for\s*\([^;]+;\s*i\s*<\s*n/.test(l));
+        if (loopLineIndex !== -1) {
+            errors.push({
+                line: loopLineIndex + 1,
+                message: "Potential loop range error for Factorial. 'i < n' stops before 'n'. Usually Factorial includes 'n' (i <= n).",
+                severity: "warning",
+                errorType: "OFF_BY_ONE"
+            });
         }
     }
 

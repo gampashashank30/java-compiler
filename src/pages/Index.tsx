@@ -196,30 +196,61 @@ const Index = () => {
         }
       } else {
         toast.dismiss();
-        toast.success("Execution Successful");
 
-        // Success optimization tips
+        // Even if Execution is Successful, we run AI to check for semantic/logical errors
+        // that static analysis missed (e.g. Prime Check logic, Palindrome logic).
+        toast.success("Execution Successful - Running AI Logic Check...");
+
         try {
           const { callGroqAPI } = await import("@/utils/groqClient");
+          // Use the SAME prompt structure as failure, but frame it as a 'Logic Audit'
           const prompt = `
-                 The code ran successfully. 
-                 CODE: ${code}
-                 OUTPUT: ${result.output}
+                 The code ran successfully (Exit Code 0), but I want to double-check for LOGICAL ERRORS.
+                 CODE: 
+                 ${code}
                  
-                 Provide a JSON response with:
+                 OUTPUT: 
+                 ${result.output}
+                 
+                 ANALYZE specifically for:
+                 1. Incorrect logic (e.g. Prime check failing, Palindrome logic wrong)
+                 2. Incorrect loop ranges (e.g. < n vs <= n)
+                 3. Integer division issues
+                 4. Wrong operators (e.g. > vs <)
+                 
+                 If NO errors are found, return "minimal_fix_patches": [] and "summary": "Code looks correct".
+                 If errors ARE found, provides fixes in "minimal_fix_patches".
+
+                 Provide a JSON response:
                  {
-                     "summary": "Code looks good!",
-                     "detailed_explanation": "Explain why this code works well or suggest minor style improvements.",
-                     "confidence": 1.0
+                     "summary": "Summary of audit",
+                     "detailed_explanation": "Explanation",
+                     "fix_summary": "How to fix (if any)",
+                     "corrected_code": "Full Corrected Code (optional)",
+                     "minimal_fix_patches": [ { "line_start": number, "line_end": number, "replacement": "string" } ],
+                     "confidence": number (1.0 for perfect, 0.0 for bad)
                  }
                 `;
+
           const aiData = await callGroqAPI([
-            { role: "system", content: "You are a Java programming tutor. JSON only." },
+            { role: "system", content: "You are a strict Java Code Auditor. JSON only." },
             { role: "user", content: prompt }
           ]);
+
           setAiExplanation(aiData);
+          setShowAIExplanation(true); // Always show explanation for audit
+
+          // If AI found patches, treat it as a "Warning" state so user sees Auto Fix
+          if (aiData.minimal_fix_patches && aiData.minimal_fix_patches.length > 0) {
+            toast.warning("AI Detected Hidden Logical Errors!");
+            // Visually indicate something is wrong even if compiler passed
+            setOutputType("warning");
+          } else {
+            toast.success("AI Verification Passed: Code looks good!");
+          }
+
         } catch (e) {
-          // Ignore optimization error
+          console.error("AI Audit Logic Failed", e);
         }
       }
     } catch (err) {
