@@ -225,6 +225,10 @@ const Index = () => {
                  Analyze if the code *actually* performs the task implied by the Class Name "${className}".
                  Also check for generic logical errors, silent failures, or edge cases.
                  
+                 IMPORTANT DISTINCTION:
+                 - **Logical Errors** (WRONG): Math errors, infinite loops, printing wrong values, wrong conditions. -> RETURN PATCHES.
+                 - **Robustness/Best Practices** (OPTIONAL): Missing input validation, lack of comments, inefficiency. -> DO NOT RETURN PATCHES (just mention in summary).
+                 
                  Look for:
                  - Semantic Errors (Does it do what the Class Name says?)
                  - Mathematical errors (formulas, order of operations).
@@ -232,13 +236,13 @@ const Index = () => {
                  - Loop errors (ranges, termination).
                  - State inconsistencies.
                  
-                 If the logic is 100% correct and robust, return "minimal_fix_patches": [] and "summary": "Code works perfectly".
-                 If there is ANY flaw (even minor), provide the fix.
+                 If the logic is correct (even if not robust against bad input), return "minimal_fix_patches": [] and "summary": "Code works perfectly".
+                 Only provide fixes for ACTUAL logical failures that produce wrong output.
 
                  Provide a JSON response:
                  {
-                     "summary": "Summary of logical flaw",
-                     "detailed_explanation": "Why the logic is wrong",
+                     "summary": "Summary of audit",
+                     "detailed_explanation": "Explanation",
                      "fix_summary": "Correction",
                      "corrected_code": "Full Corrected Code",
                      "minimal_fix_patches": [ { "line_start": number, "line_end": number, "replacement": "string" } ],
@@ -247,7 +251,7 @@ const Index = () => {
                 `;
 
           const aiData = await callGroqAPI([
-            { role: "system", content: "You are a Senior Java Code Auditor. You verify if the code matches the Class Name intent. JSON only." },
+            { role: "system", content: "You are a Senior Java Code Auditor. You differentiate between BROKEN logic and POOR practice. JSON only." },
             { role: "user", content: prompt }
           ]);
 
