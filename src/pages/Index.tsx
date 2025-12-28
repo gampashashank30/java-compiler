@@ -1,14 +1,16 @@
-import { useState, useRef } from "react";
-import CodeEditor from "@/components/CodeEditor";
+import { useState, useRef, lazy, Suspense } from "react";
+// import CodeEditor from "@/components/CodeEditor"; // Lazy loaded below
 import ConsoleOutput from "@/components/ConsoleOutput";
 import AIExplanation from "@/components/AIExplanation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Sparkles, BookOpen, Code2, Download, Wand2 } from "lucide-react";
+import { Play, Sparkles, BookOpen, Code2, Download, Wand2, Terminal } from "lucide-react";
 
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+
+const CodeEditor = lazy(() => import("@/components/CodeEditor"));
 
 const defaultCode = `public class Main {
     public static void main(String[] args) {
@@ -55,30 +57,14 @@ const Index = () => {
     setAiExplanation(null);
     setIsRunning(true);
 
-    // Check for Scanner to prompt user
-    const needsInput = /Scanner|System\.in/.test(code);
-    let currentInputs: string[] = [];
-
-    if (needsInput) {
-      // Simple prompt loop (blocking) logic simulation
-      // For now, if we see 'Scanner', assume 1 input per next(), realistically hard to parsing static analysis
-      // Let's just ask for 1 input generically if Scanner is detected, or maybe 3 to be safe.
-      const val = prompt(`Program requires input. Enter values separated by space:`);
-      if (val === null) {
-        setIsRunning(false);
-        return;
-      }
-      currentInputs = val.split(" ");
-    }
-    setUserInputs(currentInputs);
-
     toast.loading("Compiling code...");
 
     try {
       const { runJavaCompilerSimulation } = await import("@/utils/compiler");
       const { trackMistakes } = await import("@/utils/mistakeTracker");
 
-      const result = await runJavaCompilerSimulation(code, currentInputs);
+      // Pass userInputs directly to the compiler
+      const result = await runJavaCompilerSimulation(code, userInputs);
 
       // Update Output State
       setOutput(result.output);
@@ -96,19 +82,17 @@ const Index = () => {
           },
           duration: 10000,
         });
-        return; // Stop further AI analysis if it's not Java
+        return;
       } else {
         setDetectedLanguage(null);
       }
 
       // Update Error Highlights (Red)
       if (result.logicalErrors.length > 0) {
-        // Map logical errors to line numbers
         const lines = result.logicalErrors.map(e => e.line).filter(l => l > 0);
         setErrorLines(lines);
       } else if (result.exitCode !== 0) {
-        // Try to parse line numbers from standard javac output
-        // Example: "Main.java:15: error: ..."
+        // Try to parse line numbers from standard compiler output
         const errorLineRegex = /:(\d+):\s+error:/g;
         const matches = [...result.output.matchAll(errorLineRegex)];
         const lines = matches.map(m => parseInt(m[1]));
@@ -118,7 +102,7 @@ const Index = () => {
       }
 
 
-      // --- LOCAL STORAGE TRACKING (Fallback for Supabase) ---
+      // --- LOCAL STORAGE TRACKING ---
 
       // 1. Compile History
       try {
@@ -133,7 +117,6 @@ const Index = () => {
         };
 
         const existingHistory = JSON.parse(localStorage.getItem('compile_history') || '[]');
-        // Keep last 20
         const newHistory = [historyItem, ...existingHistory].slice(0, 20);
         localStorage.setItem('compile_history', JSON.stringify(newHistory));
       } catch (e) {
@@ -141,7 +124,6 @@ const Index = () => {
       }
 
       // 2. Mistake Tracker
-      // Run always, even if exitCode is 0, because warnings might contain useful tracking info
       trackMistakes(result.output);
 
       // -------------------------------------------------------
@@ -155,7 +137,6 @@ const Index = () => {
 
         try {
           const { callGroqAPI } = await import("@/utils/groqClient");
-          // ... rest of AI logic
 
           const prompt = `
                 You are a helpful Java programming tutor. Analyze the following Java code and compiler output.
@@ -171,19 +152,25 @@ const Index = () => {
                 
                 Provide a JSON response with the following structure:
                 {
-                    "summary": "Short summary of the issue",
+                    "summary": "Short summary of the issue(s)",
                     "detailed_explanation": "Detailed explanation of what went wrong and why",
                     "fix_summary": "One sentence on how to fix it",
-                    "corrected_code": "The full corrected Java code (formatted with newlines and indentation)",
-                    "minimal_fix_patch": {
-                        "line_start": number,
-                        "line_end": number,
-                        "replacement": "The replacement lines only"
-                    } (optional, preferred over full code if small fix),
+                    "corrected_code": "The full corrected Java code (formatted naturally)",
+                    "minimal_fix_patches": [
+                        {
+                            "line_start": number,
+                            "line_end": number,
+                            "replacement": "The replacement lines only"
+                        }
+                    ], 
                     "root_cause_lines": [line_numbers],
                     "hints": ["hint1", "hint2"],
                     "confidence": number (0.0 to 1.0)
                 }
+                
+                IMPORTANT: 
+                - Identify ALL issues (syntax, logical, runtime).
+                - 'minimal_fix_patches' should contain fixes for ALL identified issues.
                 `;
 
           const aiData = await callGroqAPI([
@@ -194,8 +181,6 @@ const Index = () => {
           setShowAIExplanation(true);
         } catch (e) {
           console.error("AI Error", e);
-          console.log("Using local AI fallback");
-          // Use Mock AI
           const { generateMockExplanation } = await import("@/utils/mockAI");
           const mockExp = generateMockExplanation(code, result.output, result.logicalErrors);
           setAiExplanation(mockExp);
@@ -234,8 +219,7 @@ const Index = () => {
           ]);
           setAiExplanation(aiData);
         } catch (e) {
-          const { generateMockExplanation } = await import("@/utils/mockAI");
-          setAiExplanation(generateMockExplanation(code, result.output, []));
+          // Ignore optimization error
         }
       }
     } catch (err) {
@@ -251,6 +235,7 @@ const Index = () => {
     if (!aiExplanation) return;
 
     // Priority 1: Use corrected_code if available (full file replacement)
+    // This is the safest for 'Fix All' as it guarantees consistency
     if (aiExplanation.corrected_code) {
       setCode(aiExplanation.corrected_code);
 
@@ -259,30 +244,50 @@ const Index = () => {
       setFixedLines(allLines);
       setTimeout(() => setFixedLines([]), 3000);
 
-      toast.success("Corrected code has been applied!");
+      toast.success("All fixes have been applied!");
       return;
     }
 
-    // Priority 2: Use minimal_fix_patch for line-based replacement
+    // Priority 2: Use minimal_fix_patches (Multi-patch)
+    // We strictly prefer corrected_code for multiple fixes to avoid index shifting issues,
+    // but if the AI returns patches, we try to apply them bottom-up.
+    if (aiExplanation.minimal_fix_patches && Array.isArray(aiExplanation.minimal_fix_patches)) {
+      let currentCodeLines = code.split('\n');
+
+      // Sort patches by line_start descending to avoid index shifting
+      const sortedPatches = [...aiExplanation.minimal_fix_patches].sort((a, b) => b.line_start - a.line_start);
+      const fixedIndices: number[] = [];
+
+      for (const patch of sortedPatches) {
+        const before = currentCodeLines.slice(0, patch.line_start - 1);
+        const after = currentCodeLines.slice(patch.line_end); // line_end is inclusive in prompt usually, so slice from line_end (1-based) which is index line_end.
+        const replacementLines = patch.replacement.split('\n');
+
+        currentCodeLines = [...before, ...replacementLines, ...after];
+
+        // visuals
+        const len = replacementLines.length;
+        for (let k = 0; k < len; k++) fixedIndices.push(patch.line_start + k);
+      }
+
+      setCode(currentCodeLines.join('\n'));
+      setFixedLines(fixedIndices);
+      setTimeout(() => setFixedLines([]), 3000);
+      toast.success("Applied fixes!");
+      return;
+    }
+
+    // Legacy Fallback (singular)
     if (aiExplanation.minimal_fix_patch) {
       const patch = aiExplanation.minimal_fix_patch;
       const lines = code.split('\n');
-
-      // Get lines before the error (0-indexed, so line_start-1)
       const before = lines.slice(0, patch.line_start - 1);
-
-      // Get lines after the error (0-indexed, so line_end because we want to skip line_end)
       const after = lines.slice(patch.line_end);
-
-      // Split replacement by newlines in case it's multi-line
       const replacementLines = patch.replacement.split('\n');
-
-      // Combine: before + replacement lines + after
       const newCode = [...before, ...replacementLines, ...after].join('\n');
 
       setCode(newCode);
 
-      // Calculate new range for highlighting
       const startLine = patch.line_start;
       const endLine = startLine + replacementLines.length - 1;
       const fixedRange = [];
@@ -417,12 +422,21 @@ const Index = () => {
         <div className="h-full grid md:grid-cols-2 gap-4 p-4">
           {/* Editor Section */}
           <div className="h-full overflow-hidden relative group">
-            <CodeEditor
-              value={code}
-              onChange={(value) => setCode(value || "")}
-              errorLines={errorLines}
-              fixedLines={fixedLines}
-            />
+            <Suspense fallback={
+              <div className="h-full flex items-center justify-center bg-black border border-border/50 rounded-lg">
+                <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                  <Code2 className="h-8 w-8 animate-pulse opacity-50" />
+                  <p className="text-sm">Loading Editor...</p>
+                </div>
+              </div>
+            }>
+              <CodeEditor
+                value={code}
+                onChange={(value) => setCode(value || "")}
+                errorLines={errorLines}
+                fixedLines={fixedLines}
+              />
+            </Suspense>
 
             {detectedLanguage && (
               <div className="absolute bottom-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-2">
@@ -452,19 +466,37 @@ const Index = () => {
           {/* Output Section */}
           <div className="h-full overflow-hidden">
             <Tabs defaultValue="console" className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2 mb-2">
+              <TabsList className="grid w-full grid-cols-3 mb-2">
                 <TabsTrigger value="console" className="gap-2">
                   <BookOpen className="h-4 w-4" />
                   Console
+                </TabsTrigger>
+                <TabsTrigger value="input" className="gap-2">
+                  <Terminal className="h-4 w-4" />
+                  Input
                 </TabsTrigger>
                 <TabsTrigger value="ai" className="gap-2">
                   <Sparkles className="h-4 w-4" />
                   AI Explanation
                 </TabsTrigger>
               </TabsList>
+
               <TabsContent value="console" className="flex-1 m-0 overflow-hidden">
                 <ConsoleOutput output={output} type={outputType} exitCode={exitCode} />
               </TabsContent>
+
+              <TabsContent value="input" className="flex-1 m-0 overflow-hidden">
+                <Card className="h-full p-4 border-border/50 bg-card">
+                  <p className="text-sm text-muted-foreground mb-2">Provide standard input (stdin) for your program here:</p>
+                  <textarea
+                    className="w-full h-[calc(100%-2rem)] bg-muted/50 p-4 rounded-md font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Enter input values here, separated by newlines..."
+                    value={userInputs.join("\n")}
+                    onChange={(e) => setUserInputs(e.target.value.split("\n"))}
+                  />
+                </Card>
+              </TabsContent>
+
               <TabsContent value="ai" className="flex-1 m-0 overflow-hidden">
                 {showAIExplanation && aiExplanation ? (
                   <AIExplanation
@@ -484,7 +516,7 @@ const Index = () => {
             </Tabs>
           </div>
         </div>
-      </main >
+      </main>
 
       {/* Footer */}
       < footer className="flex-shrink-0 border-t border-border/50 bg-card px-4 py-2" >

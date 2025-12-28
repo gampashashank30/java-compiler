@@ -15,8 +15,9 @@ const ERROR_PATTERNS = [
     { char: ')', regex: /(expected|missing)\s*('\)'|parenthesis)/i },
     { char: '{', regex: /(expected|missing)\s*('{')/i },
     { char: '(', regex: /(expected|missing)\s*('\(')/i },
-    { char: '"', regex: /(missing terminating|expected)\s*"/i },
-    // Removed '&' Scanf check as it's C specific
+    { char: '"', regex: /(missing terminating|expected|unclosed)\s*(string|literal|quote|")|not a statement/i },
+    { char: '[', regex: /(expected|missing)\s*('\['|bracket)/i },
+    { char: ']', regex: /(expected|missing)\s*('\]'|bracket)/i },
 ];
 
 /**
