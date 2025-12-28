@@ -19,6 +19,8 @@ export interface LogicalError {
 export const detectLogicalErrors = (code: string): LogicalError[] => {
     const lines = code.split('\n');
     const errors: LogicalError[] = [];
+    // Helper to get raw code for multi-line regex
+    const rawCode = code.replace(/\n/g, '');
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -47,11 +49,8 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
         }
 
         // 3. String Equality Check (Java specific)
-        // Detects 'str == "value"' or 'str1 == str2' which compares references, not content
         if (/"/.test(line) && /==/.test(line) && (!/int|boolean|char|double|float|long|short|byte/.test(line))) {
-            // Check if comparing string literals or likely string variables
             if (/String\s+\w+/.test(code) || /"\s*==\s*"/.test(line) || /\w+\s*==\s*"/.test(line)) {
-                // Heuristic: if it looks like a string comparison
                 errors.push({
                     line: lineNum,
                     message: "String comparison using '=='. In Java, '==' compares object references. Use '.equals()' to compare string content.",
@@ -61,13 +60,9 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             }
         }
 
-        // 4. Integer Division in Expressions (e.g., Average)
-        // (a + b) / 2 -> Integer division if a and b are ints.
-        // Heuristic: Check for ( ... ) / <integer>
+        // 4. Integer Division check
         if (/\([^)]+\)\s*\/\s*\d+/.test(line)) {
-            // Check if there is a 'double' or 'float' variable assignment on the left
             if (/double|float/.test(line) || /=\s*[^;]+(a \+ b)\s*\/\s*2/.test(line)) {
-                // This is a weak check, but matches the user's "Average" case: avg = (a + b) / 2;
                 errors.push({
                     line: lineNum,
                     message: "Potential integer division loss. If operands are integers, the decimal part will be truncated before assigning to double/float. Use '2.0' or cast to double.",
@@ -89,11 +84,10 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             }
         }
 
-        // 6. Array bounds check (simple) & Loop Start Check
-        const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/) || line.match(/{\s*(\d+(,\s*\d+)*)\s*}/); // Catch {1, 2, 3} too roughly
+        // 6. Array bounds check + Loop Start Check
+        const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/) || line.match(/{\s*(\d+(,\s*\d+)*)\s*}/);
 
         // Check for Array Start Index 1
-        // for(int i = 1; i < arr.length; i++)
         if (/for\s*\(\s*int\s+\w+\s*=\s*1\s*;/.test(line) && /\.length/.test(line)) {
             errors.push({
                 line: lineNum,
@@ -113,17 +107,92 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             });
         }
 
-        // Manual Regex for the Array Bounds (reused)
+        // 7. Reverse Number while(n > 9)
+        if (/while\s*\(\s*\w+\s*>\s*9\s*\)/.test(line) && /%\s*10/.test(code)) {
+            errors.push({
+                line: lineNum,
+                message: "Logical Error in Loop detected. 'while(n > 9)' will skip the last digit processing. Use 'while(n > 0)' or 'while(n != 0)'.",
+                severity: "warning",
+                errorType: "OFF_BY_ONE"
+            });
+        }
+
+        // 8. Fibonacci Logic: a = b; b = a + b;
+        if (/a\s*=\s*b\s*;/.test(line)) {
+            const nextLine = lines[i + 1] || "";
+            if (/b\s*=\s*a\s*\+\s*b/.test(nextLine)) {
+                errors.push({
+                    line: lineNum + 1,
+                    message: "Fibonacci Logic Error. You updated 'a' before calculating 'b', so 'b' is using the WRONG 'a'. Use a temporary variable.",
+                    severity: "error",
+                    errorType: "OTHER_LOGICAL"
+                });
+            }
+        }
+
+        // 9. Binary Search Logic
+        if (/while\s*\(\s*(\w+)\s*<\s*(\w+)\s*\)/.test(line)) {
+            if (code.includes(`${RegExp.$1} = 0`) && code.includes(`${RegExp.$2} =`) && code.includes("/ 2")) {
+                errors.push({
+                    line: lineNum,
+                    message: "Binary Search Logic: 'while(low < high)' determines the loop. Usually 'low <= high' is required to check the last element.",
+                    severity: "warning",
+                    errorType: "OFF_BY_ONE"
+                });
+            }
+        }
+
+        // 10. Matrix Addition Index Swap
+        const matrixMatch = line.match(/(\w+)\[i\]\[j\]\s*=\s*(\w+)\[i\]\[j\]\s*\+\s*(\w+)\[j\]\[i\]/);
+        if (matrixMatch) {
+            errors.push({
+                line: lineNum,
+                message: `Matrix Addition Logic Error. You are adding 'a[i][j]' with 'b[j][i]'. This adds the Transpose of b, not b itself. Use 'b[i][j]'.`,
+                severity: "error",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 11. Sum of Natural Numbers + 1
+        if (/\*\s*\(\s*\w+\s*\+\s*1\s*\)\s*\/\s*2\s*\+\s*1/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Formula Error. Sum of natural numbers is n*(n+1)/2. You added an extra '+ 1' at the end.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 12. Binary to Decimal (Base 8 error)
+        if (/base\s*=\s*base\s*\*\s*8/.test(line) && /bin|binary/i.test(code)) {
+            errors.push({
+                line: lineNum,
+                message: "Binary Conversion Error. Input is Binary (Base 2) but you are multiplying base by 8 (Octal). Use 'base * 2'.",
+                severity: "error",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 13. Count Digits (int count = 1)
+        if (/int\s+count\s*=\s*1\s*;/.test(line) && code.includes("/ 10")) {
+            errors.push({
+                line: lineNum,
+                message: "Initialization Error. 'count' starts at 1. If the loop counts digits, it might result in an extra count. Usually start from 0.",
+                severity: "warning",
+                errorType: "OFF_BY_ONE"
+            });
+        }
+
+
+        // Reused Loops for Array Bounds
         const newArrMatch = line.match(/new\s+\w+\[(\d+)\]/);
         if (newArrMatch) {
             const size = parseInt(newArrMatch[1]);
             const varMatch = line.match(/(\w+)\s*=\s*new/);
-
             if (varMatch) {
                 const arrName = varMatch[1];
                 for (let j = i + 1; j < lines.length; j++) {
                     const loopLine = lines[j];
-
                     const loopMatch = loopLine.match(new RegExp(`for\\s*\\([^;]+;\\s*\\w+\\s*<=\\s*${size}\\s*;`));
                     if (loopMatch) {
                         errors.push({
@@ -150,11 +219,10 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
         }
     }
 
-    // New: Broad Check for Factorial/Loop Range
-    // if we see "fact = fact * i" and loop "i < n"
+    // Heuristics outside loop (Code wide)
+
+    // Factorial Loop Check
     if (/fact\s*=\s*fact\s*\*\s*i/.test(code) && /for\s*\([^;]+;\s*i\s*<\s*n/.test(code)) {
-        // This is a heuristic, we can't get line number easily without robust parsing,
-        // but we can search for the loop line
         const loopLineIndex = lines.findIndex(l => /for\s*\([^;]+;\s*i\s*<\s*n/.test(l));
         if (loopLineIndex !== -1) {
             errors.push({
@@ -162,6 +230,20 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
                 message: "Potential loop range error for Factorial. 'i < n' stops before 'n'. Usually Factorial includes 'n' (i <= n).",
                 severity: "warning",
                 errorType: "OFF_BY_ONE"
+            });
+        }
+    }
+
+    // Armstrong Sum Check: sum + d*d
+    if (/sum\s*=\s*sum\s*\+\s*d\s*\*\s*d\s*;/.test(code)) {
+        // Find line
+        const warningLine = lines.findIndex(l => /sum\s*=\s*sum\s*\+\s*d\s*\*\s*d\s*;/.test(l));
+        if (warningLine !== -1) {
+            errors.push({
+                line: warningLine + 1,
+                message: "Logic Error: Armstrong number check usually requires cubing digits (d*d*d) for 3-digit numbers, or Math.pow().",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
             });
         }
     }
