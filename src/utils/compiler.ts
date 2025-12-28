@@ -81,8 +81,8 @@ export const runJavaCompilerSimulation = async (code: string, userInputs: string
         }
 
         // Parse Logical Errors if needed (from stderr or output)
-        // Note: Piston returns raw output. We can try to regex match some runtime exceptions for metadata.
-        const logicalErrors: LogicalError[] = [];
+        // Combine Static Analysis (from logicalErrors.ts) + Runtime Exceptions (from Output)
+        const logicalErrors: LogicalError[] = detectLogicalErrors(code);
 
         // Simple Runtime Exception Detection for metadata
         if (output.includes("Exception in thread")) {
