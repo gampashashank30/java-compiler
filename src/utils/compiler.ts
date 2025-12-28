@@ -13,6 +13,49 @@ export interface CompilerResult {
 
 import { executeJavaCode } from './pistonClient';
 
+const fallbackSimulation = (code: string, userInputs: string[]): CompilerResult => {
+    // Basic local simulation for offline/error cases
+    // This detects basic syntax errors and runs simple print statements
+    const logicalErrors: LogicalError[] = detectLogicalErrors(code);
+    let runOutput = "";
+
+    try {
+        const lines = code.split('\n');
+        const variables: Record<string, any> = {};
+        let inMain = false;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.includes("public static void main")) { inMain = true; continue; }
+            if (!inMain) continue;
+
+            const printMatch = trimmed.match(/System\.out\.println\s*\((.*)\);/);
+            if (printMatch) {
+                let content = printMatch[1].trim();
+                // Simple string/int extraction handling
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    runOutput += content.slice(1, -1) + "\n";
+                } else if (!isNaN(Number(content))) {
+                    runOutput += content + "\n";
+                } else {
+                    runOutput += `[Simulation Value: ${content}]\n`;
+                }
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    if (!runOutput) runOutput = "Program executed in Offline Mode. (Output could not be simulated locally)";
+
+    return {
+        output: "⚠️ API CONNECTION FAILED - USING OFFLINE SIMULATION\n\n" + runOutput,
+        exitCode: 0,
+        outputType: "warning",
+        logicalErrors: logicalErrors
+    };
+};
+
 export const runJavaCompilerSimulation = async (code: string, userInputs: string[] = []): Promise<CompilerResult> => {
     try {
         // Prepare InputStream from userInputs (join with newlines)
@@ -59,13 +102,8 @@ export const runJavaCompilerSimulation = async (code: string, userInputs: string
         };
 
     } catch (e: any) {
-        console.error("Execution Engine Failed:", e);
-        return {
-            output: "Error connecting to Execution Engine: " + e.message,
-            exitCode: 1,
-            outputType: "error",
-            logicalErrors: []
-        };
+        console.error("Execution Engine Failed, using fallback:", e);
+        return fallbackSimulation(code, userInputs);
     }
 };
 
