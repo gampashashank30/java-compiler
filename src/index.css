@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 215 25% 27%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 27%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 27%;
+
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 197 71% 52%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 43 96% 56%;
+    --accent-foreground: 215 25% 27%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 210 100% 56%;
+
+    --radius: 0.5rem;
+
+    --editor-bg: 220 13% 18%;
+    --console-bg: 215 28% 17%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(210 100% 56%), hsl(197 71% 52%));
+    --gradient-accent: linear-gradient(135deg, hsl(43 96% 56%), hsl(33 100% 60%));
+    --gradient-success: linear-gradient(135deg, hsl(142 71% 45%), hsl(158 64% 52%));
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 197 71% 52%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 43 96% 56%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 212 27% 84%;
+
+    --editor-bg: 220 13% 18%;
+    --console-bg: 215 28% 17%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(210 100% 56%), hsl(197 71% 52%));
+    --gradient-accent: linear-gradient(135deg, hsl(43 96% 56%), hsl(33 100% 60%));
+    --gradient-success: linear-gradient(135deg, hsl(142 71% 45%), hsl(158 64% 52%));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Editor Highlighting - Forced High Visibility */
+.dsq-error-line {
+  background-color: rgba(220, 38, 38, 0.4) !important;
+  /* Higher opacity red */
+  border-left: 4px solid #ef4444 !important;
+  /* Thicker, brighter red border */
+}
+
+.dsq-success-line {
+  background-color: rgba(22, 163, 74, 0.4) !important;
+  /* Higher opacity green */
+  border-left: 4px solid #22c55e !important;
+  /* Thicker, brighter green border */
+}

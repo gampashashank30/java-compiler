@@ -1,0 +1,7 @@
+project_id = "lodaanucsvnnrhgdjgeh"
+
+[functions.explain-error]
+verify_jwt = false
+
+[functions.generate-study-plan]
+verify_jwt = false

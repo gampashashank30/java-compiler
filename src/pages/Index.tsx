@@ -1,0 +1,501 @@
+import { useState, useRef } from "react";
+import CodeEditor from "@/components/CodeEditor";
+import ConsoleOutput from "@/components/ConsoleOutput";
+import AIExplanation from "@/components/AIExplanation";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Play, Sparkles, BookOpen, Code2, Download, Wand2 } from "lucide-react";
+
+import { toast } from "sonner";
+import { Link } from "react-router-dom";
+
+const defaultCode = `public class Main {
+    public static void main(String[] args) {
+        int[] arr = new int[5];
+        // Bug: loop goes beyond array bounds
+        for(int i=0; i<=5; i++) {
+            arr[i] = i * 2;
+        }
+        System.out.println("Value: " + arr[5]);
+    }
+}`;
+
+const Index = () => {
+  const [code, setCode] = useState(defaultCode);
+  const [output, setOutput] = useState("");
+  const [outputType, setOutputType] = useState<"success" | "error" | "info" | "warning">("info");
+  const [exitCode, setExitCode] = useState<number | undefined>(undefined);
+  const [showAIExplanation, setShowAIExplanation] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState<any>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [userInputs, setUserInputs] = useState<string[]>([]);
+  const [userId] = useState(() => {
+    let id = localStorage.getItem('user_id');
+    if (!id) {
+      id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('user_id', id);
+    }
+    return id;
+  });
+  const currentJobRef = useRef<string | null>(null);
+
+  // New state for language detection and visual feedback
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
+  const [errorLines, setErrorLines] = useState<number[]>([]);
+  const [fixedLines, setFixedLines] = useState<number[]>([]);
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  const handleRunCode = async () => {
+    // Clear console immediately when starting a new run
+    setOutput("");
+    setOutputType("info");
+    setExitCode(undefined);
+    setShowAIExplanation(false);
+    setAiExplanation(null);
+    setIsRunning(true);
+
+    // Check for Scanner to prompt user
+    const needsInput = /Scanner|System\.in/.test(code);
+    let currentInputs: string[] = [];
+
+    if (needsInput) {
+      // Simple prompt loop (blocking) logic simulation
+      // For now, if we see 'Scanner', assume 1 input per next(), realistically hard to parsing static analysis
+      // Let's just ask for 1 input generically if Scanner is detected, or maybe 3 to be safe.
+      const val = prompt(`Program requires input. Enter values separated by space:`);
+      if (val === null) {
+        setIsRunning(false);
+        return;
+      }
+      currentInputs = val.split(" ");
+    }
+    setUserInputs(currentInputs);
+
+    toast.loading("Compiling code...");
+
+    try {
+      const { runJavaCompilerSimulation } = await import("@/utils/compiler");
+      const { trackMistakes } = await import("@/utils/mistakeTracker");
+
+      const result = await runJavaCompilerSimulation(code, currentInputs);
+
+      // Update Output State
+      setOutput(result.output);
+      setExitCode(result.exitCode);
+      setOutputType(result.outputType);
+
+      // Handle Foreign Language Detection
+      if (result.isForeignLanguage && result.detectedLanguage) {
+        setDetectedLanguage(result.detectedLanguage);
+        toast.error(`Detected ${result.detectedLanguage} code`, {
+          description: "Click 'Fix Code' to automatically convert to Java.",
+          action: {
+            label: "Fix Code",
+            onClick: () => handleAutoConvert(result.detectedLanguage!)
+          },
+          duration: 10000,
+        });
+        return; // Stop further AI analysis if it's not Java
+      } else {
+        setDetectedLanguage(null);
+      }
+
+      // Update Error Highlights (Red)
+      if (result.logicalErrors.length > 0) {
+        // Map logical errors to line numbers
+        const lines = result.logicalErrors.map(e => e.line).filter(l => l > 0);
+        setErrorLines(lines);
+      } else if (result.exitCode !== 0) {
+        // Try to parse line numbers from standard javac output
+        // Example: "Main.java:15: error: ..."
+        const errorLineRegex = /:(\d+):\s+error:/g;
+        const matches = [...result.output.matchAll(errorLineRegex)];
+        const lines = matches.map(m => parseInt(m[1]));
+        setErrorLines(lines);
+      } else {
+        setErrorLines([]);
+      }
+
+
+      // --- LOCAL STORAGE TRACKING (Fallback for Supabase) ---
+
+      // 1. Compile History
+      try {
+        const historyItem = {
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          status: result.exitCode === 0 && result.logicalErrors.length === 0 ? "done" : "error",
+          code: code,
+          run_output: result.exitCode === 0 ? result.output : null,
+          raw_compiler_output: result.exitCode !== 0 ? result.output : null,
+          logical_errors: result.logicalErrors
+        };
+
+        const existingHistory = JSON.parse(localStorage.getItem('compile_history') || '[]');
+        // Keep last 20
+        const newHistory = [historyItem, ...existingHistory].slice(0, 20);
+        localStorage.setItem('compile_history', JSON.stringify(newHistory));
+      } catch (e) {
+        console.error("Failed to save history:", e);
+      }
+
+      // 2. Mistake Tracker
+      // Run always, even if exitCode is 0, because warnings might contain useful tracking info
+      trackMistakes(result.output);
+
+      // -------------------------------------------------------
+
+      // AI Analysis Logic
+      const shouldAnalyze = result.exitCode !== 0 || result.logicalErrors.length > 0;
+
+      if (shouldAnalyze) {
+        toast.dismiss();
+        toast.loading("Analyzing with AI (Groq)...");
+
+        try {
+          const { callGroqAPI } = await import("@/utils/groqClient");
+          // ... rest of AI logic
+
+          const prompt = `
+                You are a helpful Java programming tutor. Analyze the following Java code and compiler output.
+                
+                CODE:
+                ${code}
+                
+                COMPILER/RUNTIME OUTPUT:
+                ${result.output}
+                
+                LOGICAL ERRORS DETECTED:
+                ${JSON.stringify(result.logicalErrors)}
+                
+                Provide a JSON response with the following structure:
+                {
+                    "summary": "Short summary of the issue",
+                    "detailed_explanation": "Detailed explanation of what went wrong and why",
+                    "fix_summary": "One sentence on how to fix it",
+                    "corrected_code": "The full corrected Java code (formatted with newlines and indentation)",
+                    "minimal_fix_patch": {
+                        "line_start": number,
+                        "line_end": number,
+                        "replacement": "The replacement lines only"
+                    } (optional, preferred over full code if small fix),
+                    "root_cause_lines": [line_numbers],
+                    "hints": ["hint1", "hint2"],
+                    "confidence": number (0.0 to 1.0)
+                }
+                `;
+
+          const aiData = await callGroqAPI([
+            { role: "system", content: "You are a Java programming expert. Always reply in JSON." },
+            { role: "user", content: prompt }
+          ]);
+          setAiExplanation(aiData);
+          setShowAIExplanation(true);
+        } catch (e) {
+          console.error("AI Error", e);
+          console.log("Using local AI fallback");
+          // Use Mock AI
+          const { generateMockExplanation } = await import("@/utils/mockAI");
+          const mockExp = generateMockExplanation(code, result.output, result.logicalErrors);
+          setAiExplanation(mockExp);
+          setShowAIExplanation(true);
+        }
+
+        if (result.logicalErrors.length > 0) {
+          toast.dismiss();
+          toast.warning("Logical Warnings Found");
+        } else {
+          toast.dismiss();
+          toast.error("Compilation Failed");
+        }
+      } else {
+        toast.dismiss();
+        toast.success("Execution Successful");
+
+        // Success optimization tips
+        try {
+          const { callGroqAPI } = await import("@/utils/groqClient");
+          const prompt = `
+                 The code ran successfully. 
+                 CODE: ${code}
+                 OUTPUT: ${result.output}
+                 
+                 Provide a JSON response with:
+                 {
+                     "summary": "Code looks good!",
+                     "detailed_explanation": "Explain why this code works well or suggest minor style improvements.",
+                     "confidence": 1.0
+                 }
+                `;
+          const aiData = await callGroqAPI([
+            { role: "system", content: "You are a Java programming tutor. JSON only." },
+            { role: "user", content: prompt }
+          ]);
+          setAiExplanation(aiData);
+        } catch (e) {
+          const { generateMockExplanation } = await import("@/utils/mockAI");
+          setAiExplanation(generateMockExplanation(code, result.output, []));
+        }
+      }
+    } catch (err) {
+      console.error("Runner error:", err);
+      toast.dismiss();
+      toast.error("System Error: " + (err as Error).message);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleApplyPatch = () => {
+    if (!aiExplanation) return;
+
+    // Priority 1: Use corrected_code if available (full file replacement)
+    if (aiExplanation.corrected_code) {
+      setCode(aiExplanation.corrected_code);
+
+      const lines = aiExplanation.corrected_code.split('\n');
+      const allLines = lines.map((_: any, i: number) => i + 1);
+      setFixedLines(allLines);
+      setTimeout(() => setFixedLines([]), 3000);
+
+      toast.success("Corrected code has been applied!");
+      return;
+    }
+
+    // Priority 2: Use minimal_fix_patch for line-based replacement
+    if (aiExplanation.minimal_fix_patch) {
+      const patch = aiExplanation.minimal_fix_patch;
+      const lines = code.split('\n');
+
+      // Get lines before the error (0-indexed, so line_start-1)
+      const before = lines.slice(0, patch.line_start - 1);
+
+      // Get lines after the error (0-indexed, so line_end because we want to skip line_end)
+      const after = lines.slice(patch.line_end);
+
+      // Split replacement by newlines in case it's multi-line
+      const replacementLines = patch.replacement.split('\n');
+
+      // Combine: before + replacement lines + after
+      const newCode = [...before, ...replacementLines, ...after].join('\n');
+
+      setCode(newCode);
+
+      // Calculate new range for highlighting
+      const startLine = patch.line_start;
+      const endLine = startLine + replacementLines.length - 1;
+      const fixedRange = [];
+      for (let i = startLine; i <= endLine; i++) fixedRange.push(i);
+
+      setFixedLines(fixedRange);
+      setTimeout(() => setFixedLines([]), 3000);
+
+      toast.success("Code updated with suggested fix!");
+    }
+  };
+
+  const handleAutoConvert = async (sourceLang: string) => {
+    setIsTranslating(true);
+    toast.loading(`Converting from ${sourceLang} to Java...`);
+
+    try {
+      const { convertToJava } = await import("@/utils/compiler");
+      const convertedCode = await convertToJava(code, sourceLang);
+
+      // Calculate Highlighted Lines (Green) - Simple diff: All new lines are "fixed"
+      // Ideally we could diff properly, but for conversion entire file changes basically.
+      // Let's mark all non-empty lines as fixed for visual feedback.
+      const lines = convertedCode.split('\n');
+      const nonEmptyLines = lines.map((_, i) => i + 1); // Mark all lines
+
+      setCode(convertedCode);
+      setFixedLines(nonEmptyLines);
+      setDetectedLanguage(null);
+      setErrorLines([]); // Clear errors
+
+      toast.dismiss();
+      toast.success("Converted to Java Successfully!", {
+        description: "Changed lines are highlighted in green."
+      });
+
+      // Remove green highlight after 3 seconds
+      setTimeout(() => setFixedLines([]), 3000);
+
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Conversion failed.");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([code], { type: "text/x-java-source" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Main.java";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("File downloaded successfully");
+  };
+
+  return (
+    <div className="h-screen flex flex-col bg-background">
+      {/* Header */}
+      <header className="flex-shrink-0 border-b border-border/50 bg-card">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Code2 className="h-6 w-6 text-primary" />
+                <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                  Java Compiler Studio
+                </h1>
+              </div>
+              <span className="text-xs text-muted-foreground hidden sm:block">
+                with AI-powered debugging
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link to="/settings">
+                <Button variant="ghost" size="sm">
+                  <span className="hidden sm:inline">Settings</span>
+                  <span className="sm:hidden">⚙️</span>
+                </Button>
+              </Link>
+              <Link to="/aiask">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  <span className="hidden sm:inline">AI Study Assistant</span>
+                  <span className="sm:hidden">AI Ask</span>
+                </Button>
+              </Link>
+
+              {(aiExplanation?.corrected_code || aiExplanation?.minimal_fix_patch) && (
+                <Button
+                  onClick={handleApplyPatch}
+                  variant="default"
+                  size="sm"
+                  className="gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:opacity-90 text-white"
+                >
+                  <Wand2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Auto Fix</span>
+                </Button>
+              )}
+
+              <Button
+                onClick={handleDownload}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Download</span>
+              </Button>
+              <Button
+                onClick={handleRunCode}
+                disabled={isRunning}
+                size="sm"
+                className="gap-2 bg-gradient-to-r from-success to-success/80 hover:opacity-90"
+              >
+                <Play className="h-4 w-4" />
+                Run Code
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-hidden">
+        <div className="h-full grid md:grid-cols-2 gap-4 p-4">
+          {/* Editor Section */}
+          <div className="h-full overflow-hidden relative group">
+            <CodeEditor
+              value={code}
+              onChange={(value) => setCode(value || "")}
+              errorLines={errorLines}
+              fixedLines={fixedLines}
+            />
+
+            {detectedLanguage && (
+              <div className="absolute bottom-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-2">
+                <Card className="p-4 border-destructive bg-destructive/10 shadow-lg backdrop-blur-sm flex flex-col gap-2 max-w-xs">
+                  <div className="flex items-center gap-2 text-destructive font-semibold">
+                    <span className="text-xl">⚠️</span>
+                    Detected {detectedLanguage} code
+                  </div>
+                  <p className="text-xs text-muted-foreground">This compiler only supports Java.</p>
+                  <Button
+                    onClick={() => handleAutoConvert(detectedLanguage)}
+                    disabled={isTranslating}
+                    size="sm"
+                    className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:opacity-90 text-white w-full shadow-md"
+                  >
+                    {isTranslating ? (
+                      <><Sparkles className="w-3 h-3 mr-2 animate-spin" /> Converting...</>
+                    ) : (
+                      <><Wand2 className="w-3 h-3 mr-2" /> Auto Fix</>
+                    )}
+                  </Button>
+                </Card>
+              </div>
+            )}
+          </div>
+
+          {/* Output Section */}
+          <div className="h-full overflow-hidden">
+            <Tabs defaultValue="console" className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-2 mb-2">
+                <TabsTrigger value="console" className="gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  Console
+                </TabsTrigger>
+                <TabsTrigger value="ai" className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Explanation
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="console" className="flex-1 m-0 overflow-hidden">
+                <ConsoleOutput output={output} type={outputType} exitCode={exitCode} />
+              </TabsContent>
+              <TabsContent value="ai" className="flex-1 m-0 overflow-hidden">
+                {showAIExplanation && aiExplanation ? (
+                  <AIExplanation
+                    explanation={aiExplanation}
+                    onApplyPatch={handleApplyPatch}
+                  />
+                ) : (
+                  <Card className="h-full overflow-hidden border-border/50 bg-card">
+                    <div className="p-8 text-center text-muted-foreground">
+                      <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg font-medium mb-2">No AI analysis yet</p>
+                      <p className="text-sm">Run your code to get AI-powered explanations and insights</p>
+                    </div>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      </main >
+
+      {/* Footer */}
+      < footer className="flex-shrink-0 border-t border-border/50 bg-card px-4 py-2" >
+        <div className="container mx-auto">
+          <p className="text-xs text-muted-foreground text-center">
+            Educational Java compiler with AI-powered error explanations • Currently in demo mode
+          </p>
+        </div>
+      </footer >
+    </div >
+  );
+};
+
+export default Index;
