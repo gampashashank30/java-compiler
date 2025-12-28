@@ -19,7 +19,6 @@ export interface LogicalError {
 export const detectLogicalErrors = (code: string): LogicalError[] => {
     const lines = code.split('\n');
     const errors: LogicalError[] = [];
-    // Helper to get raw code for multi-line regex
     const rawCode = code.replace(/\n/g, '');
 
     for (let i = 0; i < lines.length; i++) {
@@ -87,7 +86,7 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
         // 6. Array bounds check + Loop Start Check
         const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/) || line.match(/{\s*(\d+(,\s*\d+)*)\s*}/);
 
-        // Check for Array Start Index 1
+        // Loop starts at index 1
         if (/for\s*\(\s*int\s+\w+\s*=\s*1\s*;/.test(line) && /\.length/.test(line)) {
             errors.push({
                 line: lineNum,
@@ -97,7 +96,7 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             });
         }
 
-        // Check for Even/Odd Logic: n / 2 == 0 vs n % 2 == 0
+        // Even/Odd Logic: n / 2 == 0 vs n % 2 == 0
         if (/\/\s*2\s*==\s*0/.test(line)) {
             errors.push({
                 line: lineNum,
@@ -183,43 +182,73 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             });
         }
 
+        // 14. Shallow Copy of Array
+        if (/int\[\]\s+(\w+)\s*=\s*(\w+)\s*;/.test(line)) {
+            // make sure the RHS is just a variable
+            errors.push({
+                line: lineNum,
+                message: "Shallow Copy Detected. Array assignment copies the reference, not the values. Modifying one will modify the other. Use 'val.clone()' or 'System.arraycopy'.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
 
-        // Reused Loops for Array Bounds
-        const newArrMatch = line.match(/new\s+\w+\[(\d+)\]/);
-        if (newArrMatch) {
-            const size = parseInt(newArrMatch[1]);
-            const varMatch = line.match(/(\w+)\s*=\s*new/);
-            if (varMatch) {
-                const arrName = varMatch[1];
-                for (let j = i + 1; j < lines.length; j++) {
-                    const loopLine = lines[j];
-                    const loopMatch = loopLine.match(new RegExp(`for\\s*\\([^;]+;\\s*\\w+\\s*<=\\s*${size}\\s*;`));
-                    if (loopMatch) {
-                        errors.push({
-                            line: j + 1,
-                            message: `Potential off-by-one error. Loop runs up to index ${size} (inclusive), but array size is ${size}. Last index is ${size - 1}.`,
-                            severity: "warning",
-                            errorType: "OFF_BY_ONE"
-                        });
-                    }
-                    const usage = loopLine.match(new RegExp(`${arrName}\\[(\\d+)\\]`));
-                    if (usage) {
-                        const index = parseInt(usage[1]);
-                        if (index >= size) {
-                            errors.push({
-                                line: j + 1,
-                                message: `Array index out of bounds. Array size ${size}, accessed index ${index}.`,
-                                severity: "error",
-                                errorType: "ARRAY_INDEX_OUT_OF_BOUNDS"
-                            });
-                        }
-                    }
-                }
+        // 15. Check Sorted Logic
+        if (/if\s*\(.*\)\s*(\w+)\s*=\s*true\s*;\s*else\s*\1\s*=\s*false\s*;/.test(rawCode) ||
+            (/if\s*\(.*\)\s*(\w+)\s*=\s*true/.test(line) && lines[i + 2]?.includes("= false"))) {
+            errors.push({
+                line: lineNum,
+                message: "Flawed 'Is Sorted' Logic. Setting flag to true/false inside loop overwrites previous mismatch. Once 'false' is found, you should break or return.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 16. Multithreading Race Condition
+        if ((/class\s+\w+\s+extends\s+Thread/.test(code) || /implements\s+Runnable/.test(code)) && /\+\+/.test(line)) {
+            if (/static\s+int/.test(code) && !line.includes("synchronized") && !code.includes("AtomicInteger")) {
+                errors.push({
+                    line: lineNum,
+                    message: "Potential Race Condition. Modifying shared static variable in a Thread without 'synchronized' or 'AtomicInteger' leads to unpredictable results.",
+                    severity: "warning",
+                    errorType: "OTHER_LOGICAL"
+                });
             }
         }
-    }
 
-    // Heuristics outside loop (Code wide)
+        // 17. Mutable Map Key
+        if (/Map\s*<\s*(StringBuilder|StringBuffer|int\[\]|ArrayList)/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Mutable Map Key Detected. Using mutable objects (StringBuilder, Arrays) as Map keys is dangerous. If the object changes, the hash code changes, making retrieval impossible.",
+                severity: "error",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 18. Recursive variable reuse
+        if (/return\s+\w+\s*\(.*,\s*mid\s*,.*\)/.test(line) && !line.includes("mid + 1") && !line.includes("mid - 1")) {
+            errors.push({
+                line: lineNum,
+                message: "Potential Infinite Recursion. Recursive call uses 'mid' directly. Usually Binary Search requires 'mid + 1' or 'mid - 1' to reduce the range.",
+                severity: "error",
+                errorType: "INFINITE_RECURSION"
+            });
+        }
+
+        // 19. Precision Loss in Loop
+        if (/\+=\s*\w+\[\w+\]\s*\/\s*\w+\.length/.test(line) && !/double/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Precision Loss in Loop. Integer division 'a[i] / length' often results in 0. Sum all elements first, then divide the total sum by length.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+    } // END OF FOR LOOP
+
+    // Heuristics outside loop (Code wide checks or those that need robust multi-line parsing)
 
     // Factorial Loop Check
     if (/fact\s*=\s*fact\s*\*\s*i/.test(code) && /for\s*\([^;]+;\s*i\s*<\s*n/.test(code)) {
@@ -234,9 +263,8 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
         }
     }
 
-    // Armstrong Sum Check: sum + d*d
+    // Armstrong Sum Check
     if (/sum\s*=\s*sum\s*\+\s*d\s*\*\s*d\s*;/.test(code)) {
-        // Find line
         const warningLine = lines.findIndex(l => /sum\s*=\s*sum\s*\+\s*d\s*\*\s*d\s*;/.test(l));
         if (warningLine !== -1) {
             errors.push({
@@ -247,80 +275,6 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             });
         }
     }
-
-    // 14. Shallow Copy of Array
-    // int[] b = a; -> Warning: Modification affects original.
-    if (/int\[\]\s+(\w+)\s*=\s*(\w+)\s*;/.test(line)) {
-        errors.push({
-            line: lineNum,
-            message: "Shallow Copy Detected. Array assignment copies the reference, not the values. Modifying one will modify the other. Use 'val.clone()' or 'System.arraycopy'.",
-            severity: "warning",
-            errorType: "OTHER_LOGICAL"
-        });
-    }
-
-    // 15. Check Sorted Logic (Early Exit / Overwrite)
-    // if(a[i] < a[i+1]) sorted = true; else sorted = false; -- Overwrites previous
-    if (/if\s*\(.*\)\s*(\w+)\s*=\s*true\s*;\s*else\s*\1\s*=\s*false\s*;/.test(rawCode) ||
-        (/if\s*\(.*\)\s*(\w+)\s*=\s*true/.test(line) && lines[i + 2]?.includes("= false"))) {
-        errors.push({
-            line: lineNum,
-            message: "Flawed 'Is Sorted' Logic. Setting flag to true/false inside loop overwrites previous mismatch. Once 'false' is found, you should break or return.",
-            severity: "warning",
-            errorType: "OTHER_LOGICAL"
-        });
-    }
-
-    // 16. Multithreading Race Condition
-    // class ... extends Thread ... count++
-    if ((/class\s+\w+\s+extends\s+Thread/.test(code) || /implements\s+Runnable/.test(code)) && /\+\+/.test(line)) {
-        if (/static\s+int/.test(code) && !line.includes("synchronized") && !code.includes("AtomicInteger")) {
-            // Heuristic: static int modified in Thread without sync
-            errors.push({
-                line: lineNum,
-                message: "Potential Race Condition. Modifying shared static variable in a Thread without 'synchronized' or 'AtomicInteger' leads to unpredictable results.",
-                severity: "example", // Use 'example' or 'warning'
-                errorType: "OTHER_LOGICAL"
-            });
-        }
-    }
-
-    // 17. Mutable Map Key
-    // Map<StringBuilder, ...> or Map<int[], ...>
-    if (/Map\s*<\s*(StringBuilder|StringBuffer|int\[\]|ArrayList)/.test(line)) {
-        errors.push({
-            line: lineNum,
-            message: "Mutable Map Key Detected. Using mutable objects (StringBuilder, Arrays) as Map keys is dangerous. If the object changes, the hash code changes, making retrieval impossible.",
-            severity: "error",
-            errorType: "OTHER_LOGICAL"
-        });
-    }
-
-    // 18. Recursive variable reuse (e.g. Binary Search mid vs mid+1)
-    // search(..., mid, ...) -> infinite recursion if mid doesn't change
-    if (/return\s+\w+\s*\(.*,\s*mid\s*,.*\)/.test(line) && !line.includes("mid + 1") && !line.includes("mid - 1")) {
-        errors.push({
-            line: lineNum,
-            message: "Potential Infinite Recursion. Recursive call uses 'mid' directly. Usually Binary Search requires 'mid + 1' or 'mid - 1' to reduce the range.",
-            severity: "error",
-            errorType: "INFINITE_RECURSION"
-        });
-    }
-
-    // 19. Mean/Average Precision inside Loop
-    // mean += a[i] / length
-    if (/\+=\s*\w+\[\w+\]\s*\/\s*\w+\.length/.test(line) && !/double/.test(line)) {
-        errors.push({
-            line: lineNum,
-            message: "Precision Loss in Loop. Integer division 'a[i] / length' often results in 0. Sum all elements first, then divide the total sum by length.",
-            severity: "warning",
-            errorType: "OTHER_LOGICAL"
-        });
-    }
-
-    // 20. Merge Loops Count (Heuristic)
-    // Merge usually needs 3 while loops. If we see fewer, might be incomplete.
-    // (This is hard to pinpoint per line, so we skip specific line error or attach to main)
 
     return errors;
 };
