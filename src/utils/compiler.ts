@@ -11,149 +11,99 @@ export interface CompilerResult {
     detectedLanguage?: string;
 }
 
-const localSimulation = (code: string, userInputs: string[]): CompilerResult => {
-    const logicalErrors = detectLogicalErrors(code);
+import { executeJavaCode } from './pistonClient';
 
-    // 1. Syntax Error Simulation (Heuristics for Java)
-    const hasMainClass = /class\s+\w+/.test(code);
-    const hasMainMethod = /public\s+static\s+void\s+main\s*\(\s*String\s*\[\s*\]\s*\w+\s*\)/.test(code);
-
-    if (!hasMainClass) {
-        return {
-            output: "Error: Could not find or load main class. Ensure you have a 'public class Main'.",
-            exitCode: 1,
-            outputType: "error",
-            logicalErrors
-        };
-    }
-
-    if (!hasMainMethod) {
-        return {
-            output: "Error: Main method not found in class. Please define 'public static void main(String[] args)'.",
-            exitCode: 1,
-            outputType: "error",
-            logicalErrors
-        };
-    }
-
-    const hasMissingSemicolon = /System\.out\.println\([^)]+\)\s*\n/.test(code) && !/System\.out\.println\([^)]+\);/.test(code);
-    const openBraces = (code.match(/{/g) || []).length;
-    const closeBraces = (code.match(/}/g) || []).length;
-
-    if (hasMissingSemicolon) {
-        return {
-            output: "error: ';' expected",
-            exitCode: 1,
-            outputType: "error",
-            logicalErrors
-        };
-    }
-
-    if (openBraces > closeBraces) {
-        return {
-            output: "error: reached end of file while parsing",
-            exitCode: 1,
-            outputType: "error",
-            logicalErrors
-        };
-    }
-
-    // 2. Fallback: Parse System.out.println for basic output simulation
+const fallbackSimulation = (code: string, userInputs: string[]): CompilerResult => {
+    // Basic local simulation for offline/error cases
+    // This detects basic syntax errors and runs simple print statements
+    const logicalErrors: LogicalError[] = detectLogicalErrors(code);
     let runOutput = "";
 
-    // Naive regex to capture System.out.println("Literal")
-    // This is just a fallback if AI fails; AI is primary.
-    const printMatches = Array.from(code.matchAll(/System\.out\.println\s*\(\s*"([^"]*)"\s*\);/g));
+    try {
+        const lines = code.split('\n');
+        const variables: Record<string, any> = {};
+        let inMain = false;
 
-    if (printMatches.length > 0) {
-        for (const match of printMatches) {
-            runOutput += match[1] + "\n";
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.includes("public static void main")) { inMain = true; continue; }
+            if (!inMain) continue;
+
+            const printMatch = trimmed.match(/System\.out\.println\s*\((.*)\);/);
+            if (printMatch) {
+                let content = printMatch[1].trim();
+                // Simple string/int extraction handling
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    runOutput += content.slice(1, -1) + "\n";
+                } else if (!isNaN(Number(content))) {
+                    runOutput += content + "\n";
+                } else {
+                    runOutput += `[Simulation Value: ${content}]\n`;
+                }
+            }
         }
-    } else {
-        // If no print statements found or regex failed, usage default message
-        // But if code length is short and looks correct, maybe it just doesn't print.
-        if (code.includes("System.out.println")) {
-            // regex missed it, maybe variable printing
-            runOutput = "(Output simulated: Program ran successfully)";
-        } else {
-            runOutput = "Program executed. (No output)";
-        }
+    } catch (e) {
+        // ignore
     }
 
+    if (!runOutput) runOutput = "Program executed in Offline Mode. (Output could not be simulated locally)";
+
     return {
-        output: runOutput.trim(),
+        output: "⚠️ API CONNECTION FAILED - USING OFFLINE SIMULATION\n\n" + runOutput,
         exitCode: 0,
-        outputType: "success",
-        logicalErrors
+        outputType: "warning",
+        logicalErrors: logicalErrors
     };
 };
 
 export const runJavaCompilerSimulation = async (code: string, userInputs: string[] = []): Promise<CompilerResult> => {
     try {
-        const inputStr = userInputs.length > 0 ? `User Inputs: ${JSON.stringify(userInputs)}` : "No user inputs provided.";
+        // Prepare InputStream from userInputs (join with newlines)
+        const stdin = userInputs.join('\n');
 
-        // First check: Is this Java code?
-        const prompt = `
-        You are a standard Java Compiler (javac + java) runner. 
-        
-        STEP 1: DETECT LANGUAGE
-        Analyze if the provided code is valid Java code.
-        If it is clearly C, Python, JavaScript, or another language, STOP and return:
-        {
-            "output": "Detected [Language] code. This compiler only supports Java.",
-            "exitCode": 1,
-            "logicalErrors": [],
-            "isForeignLanguage": true,
-            "detectedLanguage": "[Language]"
+        // Execute via Piston
+        const result = await executeJavaCode(code, stdin);
+
+        let output = "";
+        let exitCode = 0;
+        let outputType: "success" | "error" | "info" | "warning" = "success";
+
+        // Check for Compilation Error
+        if (result.compile && result.compile.code !== 0) {
+            output = result.compile.stderr || result.compile.stdout || "Compilation Failed";
+            exitCode = result.compile.code;
+            outputType = "error";
+        } else {
+            // Compilation Success, check Run result
+            output = result.run.output; // Piston combines stdout and stderr here usually, or we can use run.stdout + run.stderr
+            exitCode = result.run.code;
+            outputType = exitCode === 0 ? "success" : "error";
         }
 
-        STEP 2: IF JAVA CODE, COMPILE AND EXECUTE
-        TASK: Compile and Execute the following Java code.
-        
-        CODE:
-        ${code}
-        
-        ${inputStr}
-        
-        INSTRUCTIONS:
-        1. Simulate the compilation (javac). If there are syntax errors, output them exactly like javac.
-        2. If it compiles, simulate the execution (java) strictly. 
-        3. Be careful with Integer Division.
-        4. Capture standard output (System.out.print/println).
-        5. Detect specific logical errors (like null pointer exceptions, array index out of bounds).
-        
-        RETURN JSON:
-        {
-            "output": "The exact stdout or compiler error message",
-            "exitCode": number (0 for success, 1 for error),
-            "logicalErrors": [
-                { 
-                    "line": number, 
-                    "message": "Description", 
-                    "severity": "warning"|"error",
-                    "errorType": "INTEGER_OVERFLOW" | "NULL_POINTER" | "POINTER_OUT_OF_BOUNDS" | "INFINITE_RECURSION" | "OFF_BY_ONE" | "DIVISION_BY_ZERO" | "OTHER_LOGICAL"
-                }
-            ]
-        }
-        `;
+        // Parse Logical Errors if needed (from stderr or output)
+        // Combine Static Analysis (from logicalErrors.ts) + Runtime Exceptions (from Output)
+        const logicalErrors: LogicalError[] = detectLogicalErrors(code);
 
-        const response = await callGroqAPI([
-            { role: "system", content: "You are a precise Java compiler simulator. JSON only." },
-            { role: "user", content: prompt }
-        ]);
+        // Simple Runtime Exception Detection for metadata
+        if (output.includes("Exception in thread")) {
+            logicalErrors.push({
+                line: 0, // Hard to parse line from stack trace reliably without complex regex, defaults to 0
+                message: "Runtime Exception Detected",
+                severity: "error",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
 
         return {
-            output: response.output,
-            exitCode: response.exitCode,
-            outputType: response.exitCode === 0 ? "success" : "error",
-            logicalErrors: response.logicalErrors || [],
-            isForeignLanguage: response.isForeignLanguage,
-            detectedLanguage: response.detectedLanguage
+            output: output,
+            exitCode: exitCode,
+            outputType: outputType,
+            logicalErrors: logicalErrors
         };
 
-    } catch (e) {
-        console.warn("Groq Simulation failed, falling back to local regex engine", e);
-        return localSimulation(code, userInputs);
+    } catch (e: any) {
+        console.error("Execution Engine Failed, using fallback:", e);
+        return fallbackSimulation(code, userInputs);
     }
 };
 

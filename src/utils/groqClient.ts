@@ -68,7 +68,33 @@ export const callGroqAPI = async (messages: ChatMessage[], jsonMode: boolean = t
         return jsonMode ? JSON.parse(content) : content;
 
     } catch (error) {
-        console.error("AI API Call Failed:", error);
-        throw error;
+        console.warn("AI API Call Failed (likely invalid/missing key or network issue). Falling back to Mock AI.", error);
+
+        // Dynamic import to avoid circular content if possible, or just standard import usage
+        const { generateMockExplanation } = await import("./mockAI");
+
+        // Mock needs code/output context. 
+        // Our callGroqAPI signature is generic (messages[]), so we have to infer or pass dummy data for mock.
+        // But generateMockExplanation requires specific args (code, output, errors).
+        // Since we can't easily reconstruct those from 'messages' generic array here without parsing prompt,
+        // we will simple return a Generic Mock Response based on the last user message.
+
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === "user")?.content || "";
+
+        // Simple heuristic to provide somewhat relevant mock response
+        if (jsonMode) {
+            return {
+                summary: "AI Analysis Unavailable (Mock Mode)",
+                detailed_explanation: "The AI service could not be reached (missing API Key or Network Error). Detailed analysis is disabled.",
+                fix_summary: "Please check your code manually or verify API settings.",
+                corrected_code: null,
+                minimal_fix_patches: [],
+                confidence: 0.0,
+                root_cause_lines: [],
+                hints: ["Check syntax manually", "Ensure semicolons and braces are correct"]
+            };
+        } else {
+            return "AI Translation Unavailable in Mock Mode.";
+        }
     }
 };
