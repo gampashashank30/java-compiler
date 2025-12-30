@@ -12,7 +12,7 @@ serve(async (req) => {
 
   try {
     const { code, compilerOutput, runtimeOutput, userId } = await req.json();
-    
+
     console.log("Explaining error for code length:", code?.length);
     console.log("Compiler output:", compilerOutput);
 
@@ -21,38 +21,37 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `You are the "C Compiler Assistant". Analyze C code for syntax errors, logical errors, runtime errors, undefined behavior, and correctness.
+    const systemPrompt = `Act as a patient, high-level technical thought partner for a 1st-year engineering student. Your goal is to analyze C code and provide fixes that match the learner's complexity level.
 
 Output valid JSON only. Schema:
 
 {
  "fix_summary": string,          // Short list of all errors found (or "Code is correct")
- "corrected_code": string,       // COMPLETE corrected source code as a single string. If no errors, return original code.
+ "corrected_code": string,       // COMPLETE corrected source code. MUST INCLUDE INPUT ECHOING logic.
  "summary": string,              // 1-2 sentence plain-language summary
- "root_cause_lines": [int],      // Line numbers causing problems (1-indexed), empty if no errors
- "detailed_explanation": string, // ALWAYS explain: (a) purpose, (b) issues found, (c) why problems occur, (d) how fixed, (e) test cases
- "minimal_fix_patch": {
-     "type": "replace",
-     "line_start": int,
-     "line_end": int,
-     "replacement": string       // ONLY corrected lines, NOT original code
- } | null,
- "hints": [string],              // 2-4 educational hints
+ "root_cause_lines": [int],      // Line numbers causing problems
+ "detailed_explanation": string, // Formatted as specific Topic, Why, Fix.
+ "minimal_fix_patch": { "type": "replace", "line_start": int, "line_end": int, "replacement": string } | null,
+ "hints": [string],
  "learning_resources": [ { "title": string, "type": string, "url": string } ],
- "confidence": number            // 0.0-1.0
+ "topic_detected": string        // e.g. "Basic Arithmetic", "Recursion", "Conditional Logic"
 }
 
-CRITICAL RULES:
-1. ALWAYS return "corrected_code" with the FULL corrected program. Do NOT append fixes - REPLACE wrong lines.
-2. In "replacement": provide ONLY corrected lines that replace line_start to line_end. No duplicates.
-3. Detect uninitialized variables - add initialization (e.g., int a = 0, b = 0;).
-4. Check scanf usage - wrap with: if (scanf(...) != expected_count) { fprintf(stderr, "Invalid input\\n"); return 1; }
-5. Fix logical errors (e.g., printing wrong variable in conditionals).
-6. ALWAYS provide detailed_explanation covering purpose, issues, fixes, and test cases.
-7. For correct code, set minimal_fix_patch to null.
-8. Keep explanations beginner-friendly with concrete examples.
-9. Provide real learning_resources URLs from: cppreference.com, learn-c.org, tutorialspoint.com, geeksforgeeks.org.
-10. No garbage values: ensure all variables initialized, inputs validated.`;
+Core Directives:
+1. **Maintain Simplicity**: If the code uses basic concepts, do NOT suggest complex solutions. Keep corrections simple.
+2. **Input Echoing**: ALWAYS ensure corrected code prints scanf values back (e.g., 'printf("\\nYou entered: %d", var);'). This is CRITICAL for the web UI.
+3. **Context-Aware Explanations**:
+   - **Recursion**: Discuss base cases and stack overflow.
+   - **Functions**: Discuss scope and return types.
+   - **Basic Procedural**: Focus on syntax, logic, and format specifiers (%d).
+4. **Logical Warning Logic**: Flag logical issues (e.g., missing printf placeholder) even if it runs.
+5. **Output Formatting**:
+   - **Topic Detected**: Identify the concept.
+   - **Why it didn't show in Console**: Explain scanf is silent; printf is needed.
+   - **Fix Summary**: Use bullet points.
+6. **Constraints**: Avoid advanced headers like <limits.h> unless already present. Use standard <stdio.h>.
+
+CRITICAL: Return valid JSON.`;
 
     const userMessage = JSON.stringify({
       code,
@@ -63,7 +62,7 @@ CRITICAL RULES:
     });
 
     console.log("Calling Lovable AI...");
-    
+
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -82,14 +81,14 @@ CRITICAL RULES:
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("AI API error:", aiResponse.status, errorText);
-      
+
       if (aiResponse.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      
+
       if (aiResponse.status === 402) {
         return new Response(
           JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
@@ -126,16 +125,16 @@ CRITICAL RULES:
 
     // Calculate mistake counts
     const mistakeCounts: Record<string, number> = {};
-    
+
     // Count missing semicolons
-    const semicolonErrors = (compilerOutput.match(/expected ';'/g) || []).length + 
-                            (compilerOutput.match(/missing ';'/g) || []).length;
+    const semicolonErrors = (compilerOutput.match(/expected ';'/g) || []).length +
+      (compilerOutput.match(/missing ';'/g) || []).length;
     if (semicolonErrors > 0) mistakeCounts[';'] = semicolonErrors;
-    
+
     // Count missing ampersands (scanf issues)
     const ampErrors = (compilerOutput.match(/scanf.*expected.*&/g) || []).length;
     if (ampErrors > 0) mistakeCounts['&'] = ampErrors;
-    
+
     // Heuristic: check for scanf without & in code
     const scanfRegex = /scanf\s*\(\s*"[^"]*"\s*,\s*([^)]+)\)/g;
     let match;
@@ -156,7 +155,7 @@ CRITICAL RULES:
   } catch (error) {
     console.error("Error in explain-error function:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: error instanceof Error ? error.message : "Unknown error",
         summary: "An error occurred while processing your request",
         confidence: 0

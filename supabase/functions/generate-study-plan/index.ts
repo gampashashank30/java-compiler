@@ -29,6 +29,13 @@ serve(async (req) => {
   "explanation": string  // Brief explanation of the solution approach
 }
 
+Code Requirements:
+1. **Input Echoing**: Immediately after reading values (e.g. with scanf), print them back (e.g., 'printf("Received inputs: %d and %d\\n", a, b);').
+2. **Type Validation**: Check the return value of scanf. If it fails (e.g., 'scanf("%d", &x) != 1'), print an error message to stderr and exit(1) gracefully.
+3. **Input Buffering**: Clear the input buffer after reading to prevent issues (e.g., 'while(getchar() != '\\n');').
+4. **Modern Style**: Use standard 'int main(void)' signature (or 'int main(int argc, char *argv[])'). Return 0 at the end. Use comments.
+5. **Safety**: Avoid unsafe functions like 'gets'. Use 'fgets' or safe 'scanf' usage.
+
 Code size preference: ${codeSize || 'medium'}
 - If "big": Include detailed comments, error handling, and test cases
 - If "medium": Include essential comments and a clean solution
