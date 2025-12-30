@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import CodeEditor from "@/components/CodeEditor";
 import ConsoleOutput from "@/components/ConsoleOutput";
 import AIExplanation from "@/components/AIExplanation";
@@ -22,7 +22,10 @@ const defaultCode = `public class Main {
 }`;
 
 const Index = () => {
-  const [code, setCode] = useState(defaultCode);
+  // Initialize code from localStorage or use default
+  const [code, setCode] = useState(() => {
+    return localStorage.getItem('saved_code') || defaultCode;
+  });
   const [output, setOutput] = useState("");
   const [outputType, setOutputType] = useState<"success" | "error" | "info" | "warning">("info");
   const [exitCode, setExitCode] = useState<number | undefined>(undefined);
@@ -45,6 +48,12 @@ const Index = () => {
   const [errorLines, setErrorLines] = useState<number[]>([]);
   const [fixedLines, setFixedLines] = useState<number[]>([]);
   const [isTranslating, setIsTranslating] = useState(false);
+
+  // Persist code to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('saved_code', code);
+  }, [code]);
+
 
   const handleRunCode = async () => {
     // Clear console immediately when starting a new run
@@ -142,7 +151,9 @@ const Index = () => {
 
       // 2. Mistake Tracker
       // Run always, even if exitCode is 0, because warnings might contain useful tracking info
-      trackMistakes(result.output);
+      // Combine output with logical error messages so the tracker can catch those too
+      const combinedOutputForTracking = result.output + "\n" + result.logicalErrors.map(e => e.message).join("\n");
+      trackMistakes(combinedOutputForTracking);
 
       // -------------------------------------------------------
 

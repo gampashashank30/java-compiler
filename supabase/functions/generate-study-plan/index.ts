@@ -12,7 +12,7 @@ serve(async (req) => {
 
   try {
     const { problemText, level, provideFullSolution, codeSize } = await req.json();
-    
+
     console.log("Generating study plan for level:", level);
     console.log("Problem text length:", problemText?.length);
 
@@ -21,7 +21,7 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const solutionInstruction = provideFullSolution 
+    const solutionInstruction = provideFullSolution
       ? `\n\nIMPORTANT: The user requested a FULL CODE SOLUTION. You MUST include a complete, runnable C implementation in the response. Add a "solution" object with this schema:
 {
   "code": string,  // Complete, working C code
@@ -65,7 +65,7 @@ Create a curriculum appropriate for a ${level} level programmer. For beginners, 
     });
 
     console.log("Calling Lovable AI for study plan...");
-    
+
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -84,14 +84,14 @@ Create a curriculum appropriate for a ${level} level programmer. For beginners, 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("AI API error:", aiResponse.status, errorText);
-      
+
       if (aiResponse.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      
+
       if (aiResponse.status === 402) {
         return new Response(
           JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
@@ -154,7 +154,7 @@ Create a curriculum appropriate for a ${level} level programmer. For beginners, 
   } catch (error) {
     console.error("Error in generate-study-plan function:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: error instanceof Error ? error.message : "Unknown error",
         problem_summary: "An error occurred while generating the study plan"
       }),

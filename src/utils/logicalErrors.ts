@@ -132,7 +132,19 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
                 }
             }
         }
+
+        // 7. Missing # in Preprocessor Directive (Common C/C++ mistake, but checking here for robustness)
+        // Detects 'include <stdio.h>' without '#'
+        if (/^\s*include\s*[<"]/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Preprocessor directive missing '#'. Did you mean '#include'?",
+                severity: "error",
+                errorType: "OTHER_LOGICAL" // Using generic type as specific one isn't defined, but message is clear
+            });
+        }
     }
 
     return errors;
+
 };

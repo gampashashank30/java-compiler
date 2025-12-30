@@ -12,10 +12,13 @@ const STORAGE_KEY_LAST_SEEN = 'mistake_last_seen';
 const ERROR_PATTERNS = [
     { char: ';', regex: /(expected|missing)\s*(';'|semicolon)/i },
     { char: '}', regex: /(expected|missing)\s*('}'|brace|curly)/i },
-    { char: ')', regex: /(expected|missing)\s*('\)'|parenthesis)/i },
     { char: '{', regex: /(expected|missing)\s*('{')/i },
+    { char: ')', regex: /(expected|missing)\s*('\)'|parenthesis)/i },
     { char: '(', regex: /(expected|missing)\s*('\(')/i },
+    { char: ']', regex: /(expected|missing)\s*('\]'|bracket)/i },
+    { char: '[', regex: /(expected|missing)\s*('\['|bracket)/i },
     { char: '"', regex: /(missing terminating|expected)\s*"/i },
+    { char: '#', regex: /Preprocessor directive missing '#'/i },
     // Removed '&' Scanf check as it's C specific
 ];
 
