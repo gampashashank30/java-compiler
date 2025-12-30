@@ -257,6 +257,61 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
             });
         }
 
+        // 20. Unchecked Return Values (Best Practice)
+        // Detects 'scanf(...)' or 'scanner.next...()' used as a statement without assignment or check
+        if (/^\s*(scanf|fscanf|sscanf|scan\.next\w*|scanner\.next\w*)\s*\(/.test(line) && !line.includes("=") && !/if|while|for|switch/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Unchecked Return Value. The return value of input functions should be checked to handle errors or EOF correctly.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 21. Buffer Safety / Unsafe Functions (Safety)
+        if (/\b(strcpy|strcat|sprintf|gets)\b/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Unsafe Function Detected. This function does not check bounds and can cause buffer overflows. Use safe alternatives like 'strncpy', 'strncat', 'snprintf', or 'fgets'.",
+                severity: "error",
+                errorType: "ARRAY_INDEX_OUT_OF_BOUNDS"
+            });
+        }
+
+        // 22. Redundant Logic (Optimisation / logic)
+        // e.g., 'a + b;' on its own line
+        if (/^\s*[\w\d_.]+\s*[\+\-\*\/%]\s*[\w\d_.]+\s*;\s*$/.test(line)) {
+            errors.push({
+                line: lineNum,
+                message: "Redundant Logic. This statement performs a calculation but discards the result. Did you mean to assign it (e.g., 'x = a + b')?",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 23. Input Validation (Safety heuristic)
+        // If we see reading an integer, check if the variable is checked against a range in the *next few lines*. 
+        // This is hard in a single pass, so we do a simpler separate check or just flag 'Advice'.
+        // Let's flag usage of `nextInt` without any validation logic in the file (checked outside loop? no, let's keep it simple here).
+        // Check for: int x = scanner.nextInt(); if (x < 0)...
+        // Implementation: Just flag if we see nextInt() but NO 'if' statement in the surrounding block (too complex for regex).
+        // Simpler: If line has `nextInt` or `scanf`, warn "Input Validation Advice".
+        if (/(nextInt|nextDouble|nextFloat|scanf)\s*\(/.test(line)) {
+            // Check if there is ANY 'if' in the code? No, that's too broad.
+            // Let's just give a general advice warning on the line of input.
+            errors.push({
+                line: lineNum,
+                message: "Input Validation Advice: Ensure that this user input is validated (e.g., check for negative or out-of-range values) before using it.",
+                severity: "warning",
+                errorType: "OTHER_LOGICAL"
+            });
+        }
+
+        // 24. Potential Buffer Overflow in Loops
+        // for(int i=0; i<=10; i++) arr[i] = ... where arr is size 10. (Already covered partially by OFF_BY_ONE, but explicitly check <= size)
+        // This requires parsing size. We have a simple heuristic in #6, let's strengthen it.
+
+
     } // END OF FOR LOOP
 
     // Heuristics outside loop (Code wide checks or those that need robust multi-line parsing)
