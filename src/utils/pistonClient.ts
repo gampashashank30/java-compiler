@@ -48,9 +48,9 @@ export const executeJavaCode = async (code: string, inputs: string = ""): Promis
         }
 
         return await response.json();
-    } catch (error: any) {
+    } catch (error: unknown) {
         clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
+        if (error instanceof Error && error.name === 'AbortError') {
             throw new Error("Execution timed out (limit: 5 seconds). Infinite loop detected?");
         }
         console.error("Piston Execution Failed:", error);

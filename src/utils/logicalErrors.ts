@@ -84,8 +84,6 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
         }
 
         // 6. Array bounds check + Loop Start Check
-        const arrayDecl = line.match(/new\s+\w+\[(\d+)\]/) || line.match(/{\s*(\d+(,\s*\d+)*)\s*}/);
-
         // Loop starts at index 1
         if (/for\s*\(\s*int\s+\w+\s*=\s*1\s*;/.test(line) && /\.length/.test(line)) {
             errors.push({
@@ -280,7 +278,7 @@ export const detectLogicalErrors = (code: string): LogicalError[] => {
 
         // 22. Redundant Logic (Optimisation / logic)
         // e.g., 'a + b;' on its own line
-        if (/^\s*[\w\d_.]+\s*[\+\-\*\/%]\s*[\w\d_.]+\s*;\s*$/.test(line)) {
+        if (/^\s*[\w\d_.]+\s*[+\-*/%]\s*[\w\d_.]+\s*;\s*$/.test(line)) {
             errors.push({
                 line: lineNum,
                 message: "Redundant Logic. This statement performs a calculation but discards the result. Did you mean to assign it (e.g., 'x = a + b')?",
