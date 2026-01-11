@@ -23,6 +23,25 @@ const defaultCode = `public class Main {
     }
 }`;
 
+// Define types for AI Explanation
+interface MinimalFixPatch {
+  line_start: number;
+  line_end: number;
+  replacement: string;
+}
+
+interface AIExplanationType {
+  summary: string;
+  detailed_explanation: string;
+  fix_summary: string;
+  corrected_code?: string;
+  minimal_fix_patches?: MinimalFixPatch[];
+  minimal_fix_patch?: MinimalFixPatch; // Legacy support
+  root_cause_lines?: number[];
+  hints?: string[];
+  confidence?: number;
+}
+
 const Index = () => {
   // Initialize code from localStorage or use default
   const [code, setCode] = useState(() => {
@@ -32,17 +51,12 @@ const Index = () => {
   const [outputType, setOutputType] = useState<"success" | "error" | "info" | "warning">("info");
   const [exitCode, setExitCode] = useState<number | undefined>(undefined);
   const [showAIExplanation, setShowAIExplanation] = useState(false);
-  const [aiExplanation, setAiExplanation] = useState<any>(null);
+  const [aiExplanation, setAiExplanation] = useState<AIExplanationType | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [userInputs, setUserInputs] = useState<string[]>([]);
-  const [userId] = useState(() => {
-    let id = localStorage.getItem('user_id');
-    if (!id) {
-      id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('user_id', id);
-    }
-    return id;
-  });
+
+  // Use a ref if you need to access currentJob in a way that doesn't trigger re-renders,
+  // though it seems unused in the provided snippet.
   const currentJobRef = useRef<string | null>(null);
 
   // New state for language detection and visual feedback
@@ -56,6 +70,13 @@ const Index = () => {
     localStorage.setItem('saved_code', code);
   }, [code]);
 
+  useEffect(() => {
+    let id = localStorage.getItem('user_id');
+    if (!id) {
+      id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('user_id', id);
+    }
+  }, []);
 
   const handleRunCode = async () => {
     // Clear console immediately when starting a new run
@@ -190,13 +211,13 @@ const Index = () => {
             { role: "system", content: "You are a Java programming expert. Always reply in JSON." },
             { role: "user", content: prompt }
           ]);
-          setAiExplanation(aiData);
+          setAiExplanation(aiData as AIExplanationType);
           setShowAIExplanation(true);
         } catch (e) {
           console.error("AI Error", e);
           const { generateMockExplanation } = await import("@/utils/mockAI");
           const mockExp = generateMockExplanation(code, result.output, result.logicalErrors);
-          setAiExplanation(mockExp);
+          setAiExplanation(mockExp as AIExplanationType);
           setShowAIExplanation(true);
         }
 
@@ -268,7 +289,7 @@ const Index = () => {
             { role: "user", content: prompt }
           ]);
 
-          setAiExplanation(aiData);
+          setAiExplanation(aiData as AIExplanationType);
           setShowAIExplanation(true); // Always show explanation for audit
 
           // If AI found patches, treat it as a "Warning" state so user sees Auto Fix
@@ -302,7 +323,7 @@ const Index = () => {
       setCode(aiExplanation.corrected_code);
 
       const lines = aiExplanation.corrected_code.split('\n');
-      const allLines = lines.map((_: any, i: number) => i + 1);
+      const allLines = lines.map((_: string, i: number) => i + 1);
       setFixedLines(allLines);
       setTimeout(() => setFixedLines([]), 3000);
 
@@ -317,7 +338,7 @@ const Index = () => {
       let currentCodeLines = code.split('\n');
 
       // Sort patches by line_start descending to avoid index shifting
-      const sortedPatches = [...aiExplanation.minimal_fix_patches].sort((a, b) => b.line_start - a.line_start);
+      const sortedPatches = [...aiExplanation.minimal_fix_patches].sort((a: MinimalFixPatch, b: MinimalFixPatch) => b.line_start - a.line_start);
       const fixedIndices: number[] = [];
 
       for (const patch of sortedPatches) {

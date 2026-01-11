@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
-import Editor from "@monaco-editor/react";
+import Editor, { OnMount } from "@monaco-editor/react";
+import * as monaco from "monaco-editor";
 import { Card } from "@/components/ui/card";
 
 interface CodeEditorProps {
@@ -10,14 +11,54 @@ interface CodeEditorProps {
 }
 
 const CodeEditor = ({ value, onChange, errorLines = [], fixedLines = [] }: CodeEditorProps) => {
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof monaco | null>(null);
   const decorationsRef = useRef<string[]>([]);
 
-  const handleEditorDidMount = (editor: any, monaco: any) => {
+  const updateDecorations = (editor: monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof monaco) => {
+    if (!editor) return;
+
+    const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+
+    // Red Error Lines
+    errorLines.forEach((line) => {
+      newDecorations.push({
+        range: new monacoInstance.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: "dsq-error-line",
+          overviewRuler: {
+            position: monacoInstance.editor.OverviewRulerLane.Full,
+            color: "rgba(255, 0, 0, 0.4)"
+          }
+        },
+      });
+    });
+
+    // Green Fixed Lines
+    fixedLines.forEach((line) => {
+      newDecorations.push({
+        range: new monacoInstance.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: "dsq-success-line",
+          overviewRuler: {
+            position: monacoInstance.editor.OverviewRulerLane.Full,
+            color: "rgba(0, 255, 0, 0.4)"
+          }
+        },
+      });
+    });
+
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+  };
+
+  const handleEditorDidMount: OnMount = (editor, monacoInstance) => {
     editorRef.current = editor;
+    monacoRef.current = monacoInstance;
 
     // Define a more vibrant theme
-    monaco.editor.defineTheme('vibrant-dark', {
+    monacoInstance.editor.defineTheme('vibrant-dark', {
       base: 'vs-dark',
       inherit: true,
       rules: [
@@ -35,69 +76,16 @@ const CodeEditor = ({ value, onChange, errorLines = [], fixedLines = [] }: CodeE
       }
     });
 
-    monaco.editor.setTheme('vibrant-dark');
-    updateDecorations(editor, monaco);
+    monacoInstance.editor.setTheme('vibrant-dark');
+    updateDecorations(editor, monacoInstance);
   };
-
-  const updateDecorations = (editor: any, monaco: any) => {
-    if (!editor) return;
-
-    const newDecorations: any[] = [];
-
-    // Red Error Lines
-    errorLines.forEach((line) => {
-      newDecorations.push({
-        range: new monaco.Range(line, 1, line, 1),
-        options: {
-          isWholeLine: true,
-          className: "dsq-error-line",
-          overviewRuler: {
-            position: monaco.editor.OverviewRulerLane.Full,
-            color: "rgba(255, 0, 0, 0.4)"
-          }
-        },
-      });
-    });
-
-    // Green Fixed Lines
-    fixedLines.forEach((line) => {
-      newDecorations.push({
-        range: new monaco.Range(line, 1, line, 1),
-        options: {
-          isWholeLine: true,
-          className: "dsq-success-line",
-          overviewRuler: {
-            position: monaco.editor.OverviewRulerLane.Full,
-            color: "rgba(0, 255, 0, 0.4)"
-          }
-        },
-      });
-    });
-
-    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
-  };
-
-  // Update decorations when lines change
-  useEffect(() => {
-    if (editorRef.current) {
-      // We need 'monaco' instance, which is available closer to mount. 
-      // Ideally we store it or use the one from loader if imported, 
-      // but here we can just use window.monaco or pass it from mount.
-      // A cleaner way in @monaco-editor/react is using the 'monaco' prop/ref,
-      // but let's assume global monaco presence or ref access.
-      // Actually, @monaco-editor/react exposes monaco instance via onMount signature.
-      // Let's refactor to store monaco instance too.
-    }
-  }, [errorLines, fixedLines]);
-
-  // Re-implementing with proper monaco ref storage
-  const monacoRef = useRef<any>(null);
 
   useEffect(() => {
     if (editorRef.current && monacoRef.current) {
       updateDecorations(editorRef.current, monacoRef.current);
     }
-  }, [errorLines, fixedLines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorLines, fixedLines]); // We want to update decorations when these change. editorRef and monacoRef are refs.
 
   return (
     <Card className="h-full overflow-hidden border-border/50 bg-black">
@@ -107,32 +95,7 @@ const CodeEditor = ({ value, onChange, errorLines = [], fixedLines = [] }: CodeE
         theme="vibrant-dark"
         value={value}
         onChange={onChange}
-        onMount={(editor, monaco) => {
-          editorRef.current = editor;
-          monacoRef.current = monaco;
-
-          // Define and set the vibrant-dark theme
-          monaco.editor.defineTheme('vibrant-dark', {
-            base: 'vs-dark',
-            inherit: true,
-            rules: [
-              { token: 'keyword', foreground: 'ff79c6', fontStyle: 'bold' },
-              { token: 'type.identifier', foreground: '8be9fd' },
-              { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
-              { token: 'string', foreground: 'f1fa8c' },
-              { token: 'number', foreground: 'bd93f9' },
-              { token: 'delimiter', foreground: 'f8f8f2' },
-              { token: 'operator', foreground: 'ff79c6' }
-            ],
-            colors: {
-              'editor.background': '#000000',
-              'editor.foreground': '#f8f8f2',
-            }
-          });
-          monaco.editor.setTheme('vibrant-dark');
-
-          updateDecorations(editor, monaco);
-        }}
+        onMount={handleEditorDidMount}
         options={{
           minimap: { enabled: false },
           fontSize: 14,

@@ -1,6 +1,6 @@
 
 // Simple custom printf implementation for the transpiler
-const sprintf = (format: string, ...args: any[]) => {
+const sprintf = (format: string, ...args: unknown[]) => {
     let i = 0;
     return format.replace(/%[-+ #0]*(\d+)?(\.\d+)?[diuoxXfFeEgGaAcCsSp]/g, (match) => {
         const val = args[i++];

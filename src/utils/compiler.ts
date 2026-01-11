@@ -21,7 +21,6 @@ const fallbackSimulation = (code: string, userInputs: string[]): CompilerResult 
 
     try {
         const lines = code.split('\n');
-        const variables: Record<string, any> = {};
         let inMain = false;
 
         for (const line of lines) {
@@ -31,7 +30,7 @@ const fallbackSimulation = (code: string, userInputs: string[]): CompilerResult 
 
             const printMatch = trimmed.match(/System\.out\.println\s*\((.*)\);/);
             if (printMatch) {
-                let content = printMatch[1].trim();
+                const content = printMatch[1].trim();
                 // Simple string/int extraction handling
                 if (content.startsWith('"') && content.endsWith('"')) {
                     runOutput += content.slice(1, -1) + "\n";
@@ -44,6 +43,7 @@ const fallbackSimulation = (code: string, userInputs: string[]): CompilerResult 
         }
     } catch (e) {
         // ignore
+        console.error("Simulation error:", e);
     }
 
     if (!runOutput) runOutput = "Program executed in Offline Mode. (Output could not be simulated locally)";
@@ -101,7 +101,7 @@ export const runJavaCompilerSimulation = async (code: string, userInputs: string
             logicalErrors: logicalErrors
         };
 
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Execution Engine Failed, using fallback:", e);
         return fallbackSimulation(code, userInputs);
     }
@@ -123,7 +123,13 @@ export const convertToJava = async (code: string, sourceLang: string): Promise<s
             { role: "user", content: prompt }
         ], false); // false = text mode
 
-        return response.trim();
+        // Handle case where response might be an object if callGroqAPI types are loose,
+        // assuming it returns a string based on the false flag.
+        if (typeof response === 'string') {
+            return response.trim();
+        }
+        return String(response).trim();
+
     } catch (error) {
         console.warn("Groq Conversion failed, using fallback", error);
 
