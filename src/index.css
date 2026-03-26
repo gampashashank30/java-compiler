@@ -109,8 +109,38 @@ All colors MUST be HSL.
 }
 
 .dsq-success-line {
-  background-color: rgba(22, 163, 74, 0.4) !important;
-  /* Higher opacity green */
   border-left: 4px solid #22c55e !important;
   /* Thicker, brighter green border */
+}
+
+/* Premium UI Animations & Utilities */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.animate-blob {
+  animation: blob 7s infinite alternate ease-in-out;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+.glass-panel {
+  @apply bg-background/60 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)];
+}
+
+.glass-input {
+  @apply bg-white/5 border border-white/10 focus:border-primary/50 focus:bg-white/10 transition-all duration-300 outline-none rounded-xl px-4 py-3 placeholder:text-muted-foreground/50 text-foreground;
+}
+
+.premium-gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-secondary;
 }
