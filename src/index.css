@@ -138,9 +138,19 @@ All colors MUST be HSL.
 }
 
 .glass-input {
-  @apply bg-white/5 border border-white/10 focus:border-primary/50 focus:bg-white/10 transition-all duration-300 outline-none rounded-xl px-4 py-3 placeholder:text-muted-foreground/50 text-foreground;
+  @apply bg-white/5 border border-white/10 focus:border-primary/50 focus:bg-white/10 transition-all duration-300 outline-none rounded-xl py-3 placeholder:text-muted-foreground/50 text-white;
 }
 
 .premium-gradient-text {
   @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-secondary;
+}
+
+/* Fix browser autofill styling for dark mode */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #09090b inset !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 5000s ease-in-out 0s;
 }

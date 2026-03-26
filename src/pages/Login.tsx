@@ -205,7 +205,7 @@ export default function Login() {
                         onChange={(e) => setEmail(e.target.value)}
                         required
                         autoComplete="email"
-                        className="glass-input w-full pl-12"
+                        className="glass-input w-full pl-12 pr-4"
                       />
                     </div>
                   </div>
@@ -258,7 +258,7 @@ export default function Login() {
                             placeholder="+91 98765 43210"
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
-                            className="glass-input w-full pl-12"
+                            className="glass-input w-full pl-12 pr-4"
                           />
                         </div>
                         <p className="text-xs text-muted-foreground/70 pl-2">Format: +[Country Code] [Number]</p>
@@ -289,7 +289,7 @@ export default function Login() {
                           value={otp}
                           onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                           required
-                          className="glass-input w-full text-center tracking-[0.5em] text-2xl placeholder:tracking-[0.5em] placeholder:text-muted-foreground/30 font-bold"
+                          className="glass-input w-full px-4 text-center tracking-[0.5em] text-2xl placeholder:tracking-[0.5em] placeholder:text-muted-foreground/30 font-bold"
                         />
                       </div>
                       <Button

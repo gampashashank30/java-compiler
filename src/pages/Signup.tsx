@@ -142,7 +142,7 @@ export default function Signup() {
                       onChange={(e) => setName(e.target.value)}
                       required
                       autoComplete="name"
-                      className="glass-input w-full pl-12"
+                      className="glass-input w-full pl-12 pr-4"
                     />
                   </div>
                 </div>
@@ -159,7 +159,7 @@ export default function Signup() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       autoComplete="email"
-                      className="glass-input w-full pl-12"
+                      className="glass-input w-full pl-12 pr-4"
                     />
                   </div>
                 </div>
@@ -200,7 +200,7 @@ export default function Signup() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
                       autoComplete="new-password"
-                      className="glass-input w-full pl-12"
+                      className="glass-input w-full pl-12 pr-4"
                     />
                   </div>
                 </div>
