@@ -134,7 +134,7 @@ All colors MUST be HSL.
 }
 
 .glass-panel {
-  @apply bg-background/60 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)];
+  @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)];
 }
 
 .glass-input {
