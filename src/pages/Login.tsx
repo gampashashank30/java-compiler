@@ -87,7 +87,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-background relative overflow-hidden text-foreground">
+    <div className="dark min-h-screen w-full flex bg-[#030712] relative overflow-hidden text-white">
       {/* Background Animated Blobs */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full mix-blend-screen filter blur-[120px] opacity-70 animate-blob pointer-events-none"></div>
       <div className="absolute top-[20%] right-[-10%] w-[40%] h-[40%] bg-secondary/20 rounded-full mix-blend-screen filter blur-[120px] opacity-70 animate-blob animation-delay-2000 pointer-events-none"></div>
