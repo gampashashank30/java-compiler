@@ -5,10 +5,11 @@ import AIExplanation from "@/components/AIExplanation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Sparkles, BookOpen, Code2, Download, Wand2, Terminal } from "lucide-react";
+import { Play, Sparkles, BookOpen, Code2, Download, Wand2, Terminal, LogOut, User } from "lucide-react";
 
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const CodeEditor = lazy(() => import("@/components/CodeEditor"));
 
@@ -24,6 +25,9 @@ const defaultCode = `public class Main {
 }`;
 
 const Index = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
   // Initialize code from localStorage or use default
   const [code, setCode] = useState(() => {
     return localStorage.getItem('saved_code') || defaultCode;
@@ -35,15 +39,12 @@ const Index = () => {
   const [aiExplanation, setAiExplanation] = useState<any>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [userInputs, setUserInputs] = useState<string[]>([]);
-  const [userId] = useState(() => {
-    let id = localStorage.getItem('user_id');
-    if (!id) {
-      id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('user_id', id);
-    }
-    return id;
-  });
   const currentJobRef = useRef<string | null>(null);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
 
   // New state for language detection and visual feedback
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
@@ -429,6 +430,19 @@ const Index = () => {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {/* User Info */}
+              {user && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground hidden sm:flex">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="avatar" className="h-6 w-6 rounded-full" />
+                  ) : (
+                    <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center">
+                      <User className="h-3 w-3 text-primary" />
+                    </div>
+                  )}
+                  <span className="max-w-[120px] truncate">{user.displayName || user.email || user.phoneNumber}</span>
+                </div>
+              )}
               <Link to="/settings">
                 <Button variant="ghost" size="sm">
                   <span className="hidden sm:inline">Settings</span>
@@ -472,6 +486,16 @@ const Index = () => {
               >
                 <Play className="h-4 w-4" />
                 Run Code
+              </Button>
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-muted-foreground hover:text-destructive"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Logout</span>
               </Button>
             </div>
 
